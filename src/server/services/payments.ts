@@ -1,5 +1,6 @@
 import { and, desc, eq, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { autoAllocate } from "@/lib/allocation";
 import { colomboDate } from "@/lib/dates";
 import { D, fmt, sum } from "@/lib/money";
 import { escapeLike } from "@/lib/sql-text";
@@ -72,13 +73,7 @@ export async function receivePayment(
         throw new InvalidState("Allocations add up to more than the payment");
       }
     } else {
-      let remaining = D(data.amount);
-      for (const inv of open) {
-        if (remaining.lessThanOrEqualTo(0)) break;
-        const take = D(inv.outstanding).lessThan(remaining) ? D(inv.outstanding) : remaining;
-        plan.push({ invoiceId: inv.invoiceId, amount: fmt(take) });
-        remaining = remaining.minus(take);
-      }
+      plan.push(...autoAllocate(data.amount, open).allocations);
     }
 
     const paymentDate = data.paymentDate ?? colomboDate();

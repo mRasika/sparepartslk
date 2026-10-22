@@ -1,4 +1,9 @@
-import { Download, Printer, ReceiptText } from "lucide-react";
+import { Download, Printer, ReceiptText, Wallet } from "lucide-react";
+import { CancelInvoiceDialog } from "@/components/billing/cancel-invoice-dialog";
+import { D } from "@/lib/money";
+import { db } from "@/server/db/client";
+import { invoiceOutstanding } from "@/server/services/customers";
+import { paymentsForInvoice } from "@/server/services/payments";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
@@ -30,6 +35,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   }
   const cancelled = inv.status === "cancelled";
   const vatOn = Number(inv.vatRate) > 0;
+  const [outstandingMap, paid] = await Promise.all([invoiceOutstanding(db, [inv.id]), paymentsForInvoice(inv.id)]);
+  const outstanding = outstandingMap.get(inv.id)?.outstanding ?? inv.total;
 
   return (
     <div className="max-w-5xl">
@@ -56,9 +63,30 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
             <a href={`/api/invoices/${inv.id}/pdf`} className={buttonVariants({ variant: "outline" })} target="_blank" rel="noreferrer">
               <Download /> PDF
             </a>
+            {!cancelled && user.role === "admin" && <CancelInvoiceDialog invoiceId={inv.id} number={inv.number} />}
           </>
         }
       />
+
+      {!cancelled && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
+          <p className="text-sm">
+            {D(outstanding).greaterThan(0) ? (
+              <>
+                Still owed <span className="text-lg font-semibold tabular-nums">Rs {formatMoney(outstanding)}</span>
+                {inv.paymentType === "credit" && <span className="ml-2 text-muted-foreground">due {formatDate(inv.dueDate)}</span>}
+              </>
+            ) : (
+              <span className="font-medium">Paid in full</span>
+            )}
+          </p>
+          {D(outstanding).greaterThan(0) && !inv.customer.isWalkIn && (
+            <Link href={`/payments/new?customerId=${inv.customer.id}`} className={buttonVariants({ variant: "secondary" })}>
+              <Wallet /> Receive payment
+            </Link>
+          )}
+        </div>
+      )}
 
       {cancelled && (
         <p role="status" className="mb-6 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
@@ -132,6 +160,22 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       </div>
       {inv.creditOverride && (
         <p className="mt-3 text-sm text-muted-foreground">Issued over the customer’s credit limit by an admin.</p>
+      )}
+
+      {paid.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-2 text-base font-semibold">Payments applied</h2>
+          <ul className="divide-y rounded-lg border bg-card text-sm">
+            {paid.map((p) => (
+              <li key={p.paymentId} className={`flex justify-between px-4 py-2 ${p.status === "cancelled" ? "text-muted-foreground line-through" : ""}`}>
+                <span>
+                  {p.number}, {formatDate(p.paymentDate)}
+                </span>
+                <span className="tabular-nums">Rs {formatMoney(p.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );

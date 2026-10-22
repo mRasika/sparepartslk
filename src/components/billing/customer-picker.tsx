@@ -18,7 +18,7 @@ export function CustomerPicker({
   value,
   onChange,
 }: {
-  value: PickedCustomer;
+  value: PickedCustomer | null;
   onChange: (c: PickedCustomer) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -48,7 +48,7 @@ export function CustomerPicker({
           <input
             ref={inputRef}
             id="customer-search"
-            value={open ? query : value.name}
+            value={open ? query : (value?.name ?? "")}
             placeholder="Search customers"
             onFocus={(e) => {
               setOpen(true);
@@ -95,14 +95,16 @@ export function CustomerPicker({
           ))}
         </CommandList>
       </Command>
-      <p className="text-xs text-muted-foreground">
-        {value.tierName} prices
-        {value.isWalkIn
-          ? ", cash only"
-          : value.creditLimit === "0.00"
-            ? ", cash only (no credit limit)"
-            : `, credit up to Rs ${formatMoney(value.creditLimit)} for ${value.creditDays} days`}
-      </p>
+      {value && (
+        <p className="text-xs text-muted-foreground">
+          {value.tierName} prices
+          {value.isWalkIn
+            ? ", cash only"
+            : value.creditLimit === "0.00"
+              ? ", cash only (no credit limit)"
+              : `, credit up to Rs ${formatMoney(value.creditLimit)} for ${value.creditDays} days`}
+        </p>
+      )}
     </div>
   );
 }
