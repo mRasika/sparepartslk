@@ -3,7 +3,7 @@ import { z } from "zod";
 import { addDays, colomboDate } from "@/lib/dates";
 import { D } from "@/lib/money";
 import { escapeLike } from "@/lib/sql-text";
-import type { SessionUser } from "@/server/auth";
+import { requireRole, type SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
 import {
   customers,
@@ -14,6 +14,7 @@ import {
   payments,
   priceTiers,
   profiles,
+  salesReturns,
 } from "@/server/db/schema";
 import {
   CreditLimitExceeded,
@@ -207,6 +208,69 @@ export async function createInvoice(
   });
 }
 
+const cancelReasonSchema = z.string().trim().min(1, "Give a reason for cancelling").max(300);
+
+/**
+ * Cancels an issued invoice (spec §5.2, admin only). Stock comes back at the original cost and
+ * the invoice's own cash payment is cancelled with it. The number is kept; nothing is deleted.
+ */
+export async function cancelInvoice(user: SessionUser, invoiceId: string, reason: string): Promise<void> {
+  requireRole(user, "admin");
+  const why = cancelReasonSchema.parse(reason);
+
+  await db.transaction(async (tx) => {
+    const [invoice] = await tx.select().from(invoices).where(eq(invoices.id, invoiceId)).for("update");
+    if (!invoice) throw new NotFound("Invoice not found");
+    if (invoice.status !== "issued") throw new InvalidState(`${invoice.number} is already cancelled`);
+
+    const [returned] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(salesReturns)
+      .where(eq(salesReturns.invoiceId, invoiceId));
+    if (returned.n > 0) throw new InvalidState(`${invoice.number} has returns and can't be cancelled`);
+
+    const [foreign] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(paymentAllocations)
+      .innerJoin(payments, eq(payments.id, paymentAllocations.paymentId))
+      .where(
+        and(
+          eq(paymentAllocations.invoiceId, invoiceId),
+          eq(payments.status, "active"),
+          sql`(${payments.invoiceId} is null or ${payments.invoiceId} <> ${invoiceId})`,
+        ),
+      );
+    if (foreign.n > 0) {
+      throw new InvalidState(`${invoice.number} has payments allocated to it. Cancel needs an unpaid invoice.`);
+    }
+
+    await tx
+      .update(payments)
+      .set({ status: "cancelled" })
+      .where(and(eq(payments.invoiceId, invoiceId), eq(payments.status, "active")));
+
+    const items = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
+    const locked = await lockParts(tx, items.map((i) => i.partId));
+    for (const item of items) {
+      const updated = await applyMovement(tx, locked.get(item.partId)!, {
+        type: "SALE_CANCEL",
+        qtyChange: item.qty,
+        unitCost: item.unitCost,
+        refType: "invoice",
+        refId: invoiceId,
+        userId: user.id,
+        affectsAvgCost: true,
+      });
+      locked.set(item.partId, updated);
+    }
+
+    await tx
+      .update(invoices)
+      .set({ status: "cancelled", cancelReason: why, cancelledBy: user.id, cancelledAt: new Date() })
+      .where(eq(invoices.id, invoiceId));
+  });
+}
+
 /** Live totals for the invoice editor: same pricing and discount rules, no locks, no writes. */
 export async function previewInvoice(
   user: SessionUser,
@@ -246,6 +310,7 @@ export type InvoiceListRow = {
   paymentType: "cash" | "credit";
   total: string;
   status: "issued" | "cancelled";
+  outstanding: string;
 };
 
 export async function listInvoices(
@@ -255,6 +320,7 @@ export async function listInvoices(
     status?: "issued" | "cancelled";
     from?: string;
     to?: string;
+    outstandingOnly?: boolean;
     limit?: number;
   } = {},
 ): Promise<InvoiceListRow[]> {
@@ -268,6 +334,11 @@ export async function listInvoices(
   if (filters.status) where.push(eq(invoices.status, filters.status));
   if (filters.from) where.push(gte(invoices.invoiceDate, filters.from));
   if (filters.to) where.push(lte(invoices.invoiceDate, filters.to));
+  const outstanding = sql<string>`(case when ${invoices.status} = 'issued' then ${invoices.total} - least(${invoices.total},
+    coalesce((select sum(pa.amount) from ${paymentAllocations} pa join ${payments} p on p.id = pa.payment_id
+              where pa.invoice_id = ${invoices.id} and p.status = 'active'), 0)
+    + coalesce((select sum(r.total) from ${salesReturns} r where r.invoice_id = ${invoices.id}), 0)) else 0 end)::numeric(12, 2)`;
+  if (filters.outstandingOnly) where.push(sql`${outstanding} > 0`);
 
   return db
     .select({
@@ -280,6 +351,7 @@ export async function listInvoices(
       paymentType: invoices.paymentType,
       total: invoices.total,
       status: invoices.status,
+      outstanding: sql<string>`${outstanding}::text`,
     })
     .from(invoices)
     .innerJoin(customers, eq(customers.id, invoices.customerId))

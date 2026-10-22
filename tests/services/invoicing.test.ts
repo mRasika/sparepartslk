@@ -244,6 +244,17 @@ describe("invoice queries", () => {
     expect(await listInvoices({ q: "kamal" })).toHaveLength(3);
   });
 
+  it("shows what is still owed and filters to unpaid invoices", async () => {
+    const customer = await makeCustomer({ creditLimit: "100000.00" });
+    const part = await makePart({ qty: 10 });
+    const paid = await createInvoice(staff, { customerId: customer.id, paymentType: "cash", lines: [{ partId: part.id, qty: 1 }] });
+    const owed = await createInvoice(staff, { customerId: customer.id, paymentType: "credit", lines: [{ partId: part.id, qty: 2 }] });
+    const all = await listInvoices({});
+    expect(all.find((r) => r.id === paid.id)?.outstanding).toBe("0.00");
+    expect(all.find((r) => r.id === owed.id)?.outstanding).toBe("2000.00");
+    expect((await listInvoices({ outstandingOnly: true })).map((r) => r.id)).toEqual([owed.id]);
+  });
+
   it("hides line cost from staff", async () => {
     const customer = await makeCustomer();
     const part = await makePart({ qty: 10, avgCost: "640.00" });
