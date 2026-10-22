@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
+  customers,
   partFitments,
   partPrices,
   parts,
@@ -103,6 +104,32 @@ export async function makePart(
     });
   }
   return { id: part.id, sku };
+}
+
+/** A customer on the Retail tier (or `tier`), cash-only unless creditLimit is given. */
+export async function makeCustomer(
+  overrides: Partial<{
+    name: string;
+    tier: "Retail" | "Dealer" | "Wholesale";
+    creditLimit: string;
+    creditDays: number;
+    isActive: boolean;
+  }> = {},
+): Promise<{ id: string; name: string; tierId: string }> {
+  counter += 1;
+  const tiers = await tierIds();
+  const tierId = tiers[overrides.tier ?? "Retail"];
+  const [row] = await db
+    .insert(customers)
+    .values({
+      name: overrides.name ?? `Customer ${counter}`,
+      tierId,
+      creditLimit: overrides.creditLimit ?? "0.00",
+      creditDays: overrides.creditDays ?? 30,
+      isActive: overrides.isActive ?? true,
+    })
+    .returning({ id: customers.id, name: customers.name });
+  return { ...row, tierId };
 }
 
 export async function makeSupplier(overrides: Partial<{ name: string; isActive: boolean }> = {}) {
