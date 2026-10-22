@@ -52,3 +52,7 @@ next-env.d.ts
 # supabase local
 supabase/.temp
 supabase/.branches
+
+# e2e dev server build
+/.next-e2e/
+/.next-build/

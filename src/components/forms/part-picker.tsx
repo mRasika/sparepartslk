@@ -79,7 +79,9 @@ export function PartPicker({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          // Close right away: results keep focus via onMouseDown preventDefault, and a delayed close
+          // could fire after the input was refocused and hide fresh results.
+          onBlur={() => setOpen(false)}
           onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
           }}
