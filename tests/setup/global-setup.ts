@@ -26,6 +26,11 @@ export default async function setup() {
   const client = postgres(url, { max: 1, onnotice: () => {} });
   try {
     await migrate(drizzle(client), { migrationsFolder: "drizzle" });
+  } catch (e) {
+    // Vitest can fail to print errors thrown here, so log the cause plainly first.
+    const err = e as { message?: string; cause?: { message?: string } };
+    console.error("Test DB migration failed:", err.cause?.message ?? err.message);
+    throw e;
   } finally {
     await client.end();
   }

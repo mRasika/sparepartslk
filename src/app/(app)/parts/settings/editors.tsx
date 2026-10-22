@@ -5,7 +5,7 @@ import {
   upsertCategoryAction,
   upsertVehicleModelAction,
 } from "@/server/actions/catalog";
-import { ReferenceEditor } from "./reference-editor";
+import { ReferenceEditor } from "@/components/forms/reference-editor";
 
 type Named = { id: string; name: string };
 type VehicleModel = {

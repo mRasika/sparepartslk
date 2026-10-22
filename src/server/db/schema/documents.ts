@@ -44,6 +44,7 @@ export const grnItems = pgTable(
     grnId: uuid("grn_id")
       .notNull()
       .references(() => grns.id),
+    lineNo: integer("line_no").notNull(),
     partId: uuid("part_id")
       .notNull()
       .references(() => parts.id),
@@ -229,6 +230,7 @@ export const stockAdjustmentItems = pgTable(
     adjustmentId: uuid("adjustment_id")
       .notNull()
       .references(() => stockAdjustments.id),
+    lineNo: integer("line_no").notNull(),
     partId: uuid("part_id")
       .notNull()
       .references(() => parts.id),

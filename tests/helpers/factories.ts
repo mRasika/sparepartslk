@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { partFitments, partPrices, parts, priceTiers, profiles, stockMovements } from "@/server/db/schema";
+import {
+  partFitments,
+  partPrices,
+  parts,
+  priceTiers,
+  profiles,
+  stockMovements,
+  suppliers,
+} from "@/server/db/schema";
 import type { Role, SessionUser } from "@/server/auth";
 import type { PartInput } from "@/server/services/catalog";
 
@@ -95,4 +103,13 @@ export async function makePart(
     });
   }
   return { id: part.id, sku };
+}
+
+export async function makeSupplier(overrides: Partial<{ name: string; isActive: boolean }> = {}) {
+  counter += 1;
+  const [row] = await db
+    .insert(suppliers)
+    .values({ name: overrides.name ?? `Supplier ${counter}`, isActive: overrides.isActive ?? true })
+    .returning({ id: suppliers.id, name: suppliers.name });
+  return row;
 }
