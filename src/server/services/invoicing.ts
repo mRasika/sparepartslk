@@ -1,10 +1,20 @@
-import { eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { addDays, colomboDate } from "@/lib/dates";
 import { D } from "@/lib/money";
+import { escapeLike } from "@/lib/sql-text";
 import type { SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
-import { customers, invoiceItems, invoices, paymentAllocations, payments } from "@/server/db/schema";
+import {
+  customers,
+  invoiceItems,
+  invoices,
+  parts,
+  paymentAllocations,
+  payments,
+  priceTiers,
+  profiles,
+} from "@/server/db/schema";
 import {
   CreditLimitExceeded,
   Forbidden,
@@ -12,9 +22,15 @@ import {
   InvalidState,
   NotFound,
 } from "@/server/errors";
+import { toStaffView } from "@/server/services/catalog";
 import { customerBalance } from "@/server/services/customers";
 import { applyMovement, lockParts } from "@/server/services/inventory";
-import { assertDiscountAllowed, computeTotals, resolvePrices } from "@/server/services/pricing";
+import {
+  assertDiscountAllowed,
+  computeTotals,
+  resolvePrices,
+  type Totals,
+} from "@/server/services/pricing";
 import { nextNumber } from "@/server/services/sequences";
 import { getSettings } from "@/server/services/settings";
 
@@ -189,4 +205,185 @@ export async function createInvoice(
 
     return { id: invoice.id, number };
   });
+}
+
+/** Live totals for the invoice editor: same pricing and discount rules, no locks, no writes. */
+export async function previewInvoice(
+  user: SessionUser,
+  input: InvoiceInput,
+): Promise<Totals & { prices: Record<string, string>; stock: Record<string, number> }> {
+  const data = invoiceInputSchema.parse(input);
+  const settings = await getSettings();
+  const [customer] = await db.select().from(customers).where(eq(customers.id, data.customerId));
+  if (!customer) throw new NotFound("Customer not found");
+
+  const partIds = data.lines.map((l) => l.partId);
+  const prices = await resolvePrices(db, customer.tierId, partIds);
+  const totals = computeTotals(
+    data.lines.map((l) => ({ ...l, unitPrice: prices.get(l.partId)! })),
+    data.invoiceDiscount,
+    settings.vatEnabled ? settings.vatRate : "0.00",
+  );
+  assertDiscountAllowed(user, totals, settings.staffMaxDiscountPct);
+  const stockRows = await db
+    .select({ id: parts.id, qty: parts.qtyOnHand })
+    .from(parts)
+    .where(inArray(parts.id, partIds));
+  return {
+    ...totals,
+    prices: Object.fromEntries(prices),
+    stock: Object.fromEntries(stockRows.map((r) => [r.id, r.qty])),
+  };
+}
+
+export type InvoiceListRow = {
+  id: string;
+  number: string;
+  invoiceDate: string;
+  dueDate: string;
+  customerId: string;
+  customerName: string;
+  paymentType: "cash" | "credit";
+  total: string;
+  status: "issued" | "cancelled";
+};
+
+export async function listInvoices(
+  filters: {
+    q?: string;
+    customerId?: string;
+    status?: "issued" | "cancelled";
+    from?: string;
+    to?: string;
+    limit?: number;
+  } = {},
+): Promise<InvoiceListRow[]> {
+  const where: SQL[] = [];
+  const q = filters.q?.trim();
+  if (q) {
+    const like = `%${escapeLike(q)}%`;
+    where.push(sql`(${invoices.number} ilike ${like} or ${customers.name} ilike ${like} or ${customers.businessName} ilike ${like})`);
+  }
+  if (filters.customerId) where.push(eq(invoices.customerId, filters.customerId));
+  if (filters.status) where.push(eq(invoices.status, filters.status));
+  if (filters.from) where.push(gte(invoices.invoiceDate, filters.from));
+  if (filters.to) where.push(lte(invoices.invoiceDate, filters.to));
+
+  return db
+    .select({
+      id: invoices.id,
+      number: invoices.number,
+      invoiceDate: invoices.invoiceDate,
+      dueDate: invoices.dueDate,
+      customerId: invoices.customerId,
+      customerName: customers.name,
+      paymentType: invoices.paymentType,
+      total: invoices.total,
+      status: invoices.status,
+    })
+    .from(invoices)
+    .innerJoin(customers, eq(customers.id, invoices.customerId))
+    .where(where.length ? and(...where) : undefined)
+    .orderBy(desc(invoices.invoiceDate), desc(invoices.number))
+    .limit(filters.limit ?? 200);
+}
+
+export type InvoiceDetail = {
+  id: string;
+  number: string;
+  invoiceDate: string;
+  dueDate: string;
+  paymentType: "cash" | "credit";
+  status: "issued" | "cancelled";
+  tierName: string;
+  vatRate: string;
+  subtotal: string;
+  discountTotal: string;
+  vatAmount: string;
+  total: string;
+  creditOverride: boolean;
+  cancelReason: string | null;
+  cancelledAt: Date | null;
+  createdAt: Date;
+  createdByName: string;
+  customer: {
+    id: string;
+    name: string;
+    businessName: string | null;
+    phone: string | null;
+    address: string | null;
+    tin: string | null;
+    isWalkIn: boolean;
+  };
+  items: {
+    id: string;
+    lineNo: number;
+    partId: string;
+    sku: string;
+    description: string;
+    qty: number;
+    unitPrice: string;
+    discount: string;
+    lineTotal: string;
+    unitCost?: string;
+  }[];
+};
+
+export async function getInvoice(user: SessionUser, id: string): Promise<InvoiceDetail> {
+  if (!z.uuid().safeParse(id).success) throw new NotFound("Invoice not found");
+  const [row] = await db
+    .select({
+      id: invoices.id,
+      number: invoices.number,
+      invoiceDate: invoices.invoiceDate,
+      dueDate: invoices.dueDate,
+      paymentType: invoices.paymentType,
+      status: invoices.status,
+      tierName: priceTiers.name,
+      vatRate: invoices.vatRate,
+      subtotal: invoices.subtotal,
+      discountTotal: invoices.discountTotal,
+      vatAmount: invoices.vatAmount,
+      total: invoices.total,
+      creditOverride: invoices.creditOverride,
+      cancelReason: invoices.cancelReason,
+      cancelledAt: invoices.cancelledAt,
+      createdAt: invoices.createdAt,
+      createdByName: profiles.fullName,
+      customer: {
+        id: customers.id,
+        name: customers.name,
+        businessName: customers.businessName,
+        phone: customers.phone,
+        address: customers.address,
+        tin: customers.tin,
+        isWalkIn: customers.isWalkIn,
+      },
+    })
+    .from(invoices)
+    .innerJoin(customers, eq(customers.id, invoices.customerId))
+    .innerJoin(priceTiers, eq(priceTiers.id, invoices.tierId))
+    .innerJoin(profiles, eq(profiles.userId, invoices.createdBy))
+    .where(eq(invoices.id, id));
+  if (!row) throw new NotFound("Invoice not found");
+
+  const items = await db
+    .select({
+      id: invoiceItems.id,
+      lineNo: invoiceItems.lineNo,
+      partId: invoiceItems.partId,
+      sku: parts.sku,
+      description: invoiceItems.description,
+      qty: invoiceItems.qty,
+      unitPrice: invoiceItems.unitPrice,
+      discount: invoiceItems.discount,
+      lineTotal: invoiceItems.lineTotal,
+      unitCost: invoiceItems.unitCost,
+    })
+    .from(invoiceItems)
+    .innerJoin(parts, eq(parts.id, invoiceItems.partId))
+    .where(eq(invoiceItems.invoiceId, id))
+    .orderBy(asc(invoiceItems.lineNo));
+
+  return { ...row, items: items.map((i) => toStaffView(user, i)) };
 }

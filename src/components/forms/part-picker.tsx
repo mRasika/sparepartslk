@@ -3,11 +3,19 @@
 import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui/command";
+import type { ActionResult } from "@/lib/action-result";
 import { cn } from "@/lib/utils";
 import { searchPartsAction } from "@/server/actions/catalog";
 import type { PartListRow } from "@/server/services/catalog";
 
-export type PickedPart = Pick<PartListRow, "id" | "sku" | "name" | "oemPartNo" | "qtyOnHand" | "unit">;
+export type PickedPart = Pick<PartListRow, "id" | "sku" | "name" | "oemPartNo" | "qtyOnHand" | "unit"> & {
+  /** Set when the search is priced for a customer. */
+  price?: string;
+};
+
+type Search = (q: string) => Promise<ActionResult<PickedPart[]>>;
+
+const defaultSearch: Search = (q) => searchPartsAction(q, { limit: 12 });
 
 /**
  * Type-to-search part finder. Arrow keys move, Enter picks; the input clears and keeps focus
@@ -19,7 +27,9 @@ export function PartPicker({
   placeholder = "Find a part: SKU, OEM no, barcode or name",
   autoFocus,
   inputRef,
+  search = defaultSearch,
 }: {
+  search?: Search;
   onPick: (part: PickedPart) => void;
   /** Extra text shown on each result, e.g. the customer's price. */
   meta?: (part: PickedPart) => React.ReactNode;
@@ -42,13 +52,13 @@ export function PartPicker({
     const id = ++requestId.current;
     setLoading(true);
     const timer = setTimeout(async () => {
-      const result = await searchPartsAction(q, { limit: 12 });
+      const result = await search(q);
       if (id !== requestId.current) return;
       setResults(result.ok ? result.data : []);
       setLoading(false);
     }, 200);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, search]);
 
   function pick(part: PickedPart) {
     onPick(part);

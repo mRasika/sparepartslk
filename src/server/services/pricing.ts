@@ -20,9 +20,9 @@ export type Totals = {
 
 /**
  * Unit price per part for a tier: the tier's own price, else the default tier's price.
- * A part with neither raises PriceMissing — it is never priced at 0.
+ * Parts with neither are left out of the map.
  */
-export async function resolvePrices(
+export async function lookupPrices(
   tx: Executor,
   tierId: string,
   partIds: string[],
@@ -42,14 +42,23 @@ export async function resolvePrices(
     );
 
   const result = new Map<string, string>();
-  const missing: string[] = [];
   for (const id of ids) {
     const own = rows.find((r) => r.partId === id && r.tierId === tierId);
     const fallback = rows.find((r) => r.partId === id && r.tierId === defaultTier?.id);
     const price = own?.price ?? fallback?.price;
-    if (price === undefined) missing.push(id);
-    else result.set(id, price);
+    if (price !== undefined) result.set(id, price);
   }
+  return result;
+}
+
+/** Like lookupPrices, but a part with no usable price raises PriceMissing — it is never priced at 0. */
+export async function resolvePrices(
+  tx: Executor,
+  tierId: string,
+  partIds: string[],
+): Promise<Map<string, string>> {
+  const result = await lookupPrices(tx, tierId, partIds);
+  const missing = [...new Set(partIds)].filter((id) => !result.has(id));
   if (missing.length) {
     const [part] = await tx.select({ id: parts.id, sku: parts.sku }).from(parts).where(eq(parts.id, missing[0]));
     throw new PriceMissing({ partId: missing[0], sku: part?.sku ?? missing[0] });

@@ -46,7 +46,7 @@ export default async function PartPage({ params }: { params: Promise<{ id: strin
             {!part.isActive && <Badge variant="outline">Inactive</Badge>}
           </span>
         }
-        description={`${part.sku}${part.oemPartNo ? ` · OEM ${part.oemPartNo}` : ""}`}
+        description={`${part.sku}${part.oemPartNo ? `, OEM ${part.oemPartNo}` : ""}`}
         actions={
           user.role === "admin" && (
             <Link href={`/parts/${part.id}/edit`} className={buttonVariants({ variant: "outline" })}>

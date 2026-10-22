@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db/client";
 import { DiscountNotAllowed, PriceMissing } from "@/server/errors";
-import { assertDiscountAllowed, computeTotals, resolvePrices } from "@/server/services/pricing";
+import { assertDiscountAllowed, computeTotals, lookupPrices, resolvePrices } from "@/server/services/pricing";
 import { resetDb } from "../helpers/db";
 import { makePart, makeUser, tierIds } from "../helpers/factories";
 
@@ -22,6 +22,15 @@ describe("resolvePrices", () => {
     const { id } = await makePart({ prices: [{ tierId: tiers.Retail, price: "1000.00" }] });
     const prices = await resolvePrices(db, tiers.Dealer, [id]);
     expect(prices.get(id)).toBe("1000.00");
+  });
+
+  it("lookupPrices skips parts with no price instead of throwing", async () => {
+    const tiers = await tierIds();
+    const priced = await makePart();
+    const unpriced = await makePart({ prices: [] });
+    const prices = await lookupPrices(db, tiers.Wholesale, [priced.id, unpriced.id]);
+    expect(prices.get(priced.id)).toBe("850.00");
+    expect(prices.has(unpriced.id)).toBe(false);
   });
 
   it("raises PriceMissing instead of pricing at zero", async () => {

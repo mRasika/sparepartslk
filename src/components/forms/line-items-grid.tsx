@@ -40,6 +40,8 @@ export function LineItemsGrid<L extends GridLine>({
   lineTotal,
   footer,
   pickerMeta,
+  pickerSearch,
+  pickerInputRef,
   rowError,
   emptyText = "No parts added yet. Find a part above to add it.",
 }: {
@@ -50,10 +52,13 @@ export function LineItemsGrid<L extends GridLine>({
   lineTotal?: (line: L) => React.ReactNode;
   footer?: React.ReactNode;
   pickerMeta?: (part: PickedPart) => React.ReactNode;
+  pickerSearch?: React.ComponentProps<typeof PartPicker>["search"];
+  pickerInputRef?: React.RefObject<HTMLInputElement | null>;
   rowError?: (line: L) => string | undefined;
   emptyText?: string;
 }) {
-  const pickerRef = useRef<HTMLInputElement>(null);
+  const ownPickerRef = useRef<HTMLInputElement>(null);
+  const pickerRef = pickerInputRef ?? ownPickerRef;
   const inputs = useRef(new Map<string, HTMLInputElement>());
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const firstField = columns.find((c) => !c.render)?.field;
@@ -82,7 +87,7 @@ export function LineItemsGrid<L extends GridLine>({
 
   return (
     <div className="grid gap-3">
-      <PartPicker onPick={pick} meta={pickerMeta} inputRef={pickerRef} autoFocus />
+      <PartPicker onPick={pick} meta={pickerMeta} search={pickerSearch} inputRef={pickerRef} autoFocus />
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>

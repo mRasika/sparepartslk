@@ -20,7 +20,7 @@ import {
   InvalidState,
 } from "@/server/errors";
 import { customerBalance } from "@/server/services/customers";
-import { createInvoice } from "@/server/services/invoicing";
+import { createInvoice, getInvoice, listInvoices, previewInvoice } from "@/server/services/invoicing";
 import { resetDb } from "../helpers/db";
 import { makeCustomer, makePart, makeUser, tierIds } from "../helpers/factories";
 
@@ -220,5 +220,51 @@ describe("createInvoice", () => {
     const inv = await createInvoice(staff, { customerId: customer.id, paymentType: "cash", lines: [{ partId: part.id, qty: 1 }] });
     const [header] = await db.select().from(invoices).where(eq(invoices.id, inv.id));
     expect(header).toMatchObject({ vatRate: "0.00", vatAmount: "0.00", total: "1000.00" });
+  });
+});
+
+describe("invoice queries", () => {
+  beforeEach(async () => {
+    await resetDb();
+    admin = await makeUser("admin");
+    staff = await makeUser("staff");
+  });
+
+  it("finds an invoice by number", async () => {
+    const customer = await makeCustomer({ name: "Kamal Auto" });
+    const part = await makePart({ qty: 10 });
+    const sell = () =>
+      createInvoice(staff, { customerId: customer.id, paymentType: "cash", lines: [{ partId: part.id, qty: 1 }] });
+    await sell();
+    const second = await sell();
+    await sell();
+    const rows = await listInvoices({ q: `INV-${year}-000002` });
+    expect(rows.map((r) => r.id)).toEqual([second.id]);
+    expect(rows[0]).toMatchObject({ customerName: "Kamal Auto", total: "1000.00", status: "issued" });
+    expect(await listInvoices({ q: "kamal" })).toHaveLength(3);
+  });
+
+  it("hides line cost from staff", async () => {
+    const customer = await makeCustomer();
+    const part = await makePart({ qty: 10, avgCost: "640.00" });
+    const inv = await createInvoice(staff, { customerId: customer.id, paymentType: "cash", lines: [{ partId: part.id, qty: 1 }] });
+    const forStaff = await getInvoice(staff, inv.id);
+    expect(forStaff.items[0]).not.toHaveProperty("unitCost");
+    const forAdmin = await getInvoice(admin, inv.id);
+    expect(forAdmin.items[0].unitCost).toBe("640.00");
+  });
+
+  it("previews prices, stock and totals without writing anything", async () => {
+    const customer = await makeCustomer({ tier: "Dealer" });
+    const part = await makePart({ qty: 4 });
+    const preview = await previewInvoice(staff, {
+      customerId: customer.id,
+      paymentType: "cash",
+      lines: [{ partId: part.id, qty: 2, discount: { type: "percent", value: "5" } }],
+    });
+    expect(preview.prices[part.id]).toBe("900.00");
+    expect(preview.stock[part.id]).toBe(4);
+    expect(preview.total).toBe("1710.00");
+    expect(await db.select().from(invoices)).toHaveLength(0);
   });
 });
