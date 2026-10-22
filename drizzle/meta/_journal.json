@@ -15,6 +15,13 @@
       "when": 1792679253548,
       "tag": "0001_extras",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792685212139,
+      "tag": "0002_ledger_clock_timestamp",
+      "breakpoints": true
     }
   ]
 }

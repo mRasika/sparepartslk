@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -26,6 +27,10 @@ export const stockMovements = pgTable(
     refType: text("ref_type").notNull(),
     refId: uuid("ref_id"),
     ...audit(),
+    // clock_timestamp(), not now(): several movements in one transaction must stay ordered.
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
   },
   (t) => [index("stock_movements_part_created_idx").on(t.partId, t.createdAt)],
 );
