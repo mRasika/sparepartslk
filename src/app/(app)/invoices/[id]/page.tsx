@@ -1,4 +1,4 @@
-import { Download, Printer, ReceiptText, Wallet } from "lucide-react";
+import { Download, Printer, ReceiptText, Undo2, Wallet } from "lucide-react";
 import { CancelInvoiceDialog } from "@/components/billing/cancel-invoice-dialog";
 import { D } from "@/lib/money";
 import { db } from "@/server/db/client";
@@ -63,6 +63,11 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
             <a href={`/api/invoices/${inv.id}/pdf`} className={buttonVariants({ variant: "outline" })} target="_blank" rel="noreferrer">
               <Download /> PDF
             </a>
+            {!cancelled && (
+              <Link href={`/returns/new?invoiceId=${inv.id}`} className={buttonVariants({ variant: "outline" })}>
+                <Undo2 /> Return items
+              </Link>
+            )}
             {!cancelled && user.role === "admin" && <CancelInvoiceDialog invoiceId={inv.id} number={inv.number} />}
           </>
         }
