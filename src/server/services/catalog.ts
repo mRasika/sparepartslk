@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { escapeLike } from "@/lib/sql-text";
 import { moneyString, optionalId, optionalText } from "@/lib/validation";
 import { requireRole, type SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
@@ -172,10 +173,6 @@ export async function updatePart(user: SessionUser, id: string, input: PartInput
   } catch (e) {
     rethrowDuplicate(e);
   }
-}
-
-function escapeLike(q: string): string {
-  return q.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
 /**

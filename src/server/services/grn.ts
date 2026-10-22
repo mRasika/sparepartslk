@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-or
 import { z } from "zod";
 import { colomboDate } from "@/lib/dates";
 import { D, fmt, round2, sum } from "@/lib/money";
+import { escapeLike } from "@/lib/sql-text";
 import { moneyString, optionalText } from "@/lib/validation";
 import type { SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
@@ -171,7 +172,7 @@ export async function getGrn(_user: SessionUser, id: string): Promise<GrnDetail>
 export async function listGrns(filters: { q?: string; supplierId?: string; from?: string; to?: string } = {}) {
   const where: SQL[] = [];
   if (filters.q?.trim()) {
-    const q = `%${filters.q.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const q = `%${escapeLike(filters.q.trim())}%`;
     where.push(sql`(${grns.number} ilike ${q} or ${grns.supplierInvoiceNo} ilike ${q})`);
   }
   if (filters.supplierId) where.push(eq(grns.supplierId, filters.supplierId));
