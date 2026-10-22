@@ -3,8 +3,8 @@ import { z } from "zod";
 import { escapeLike } from "@/lib/sql-text";
 import { moneyString, optionalText } from "@/lib/validation";
 import type { SessionUser } from "@/server/auth";
-import { db } from "@/server/db/client";
-import { customers, priceTiers } from "@/server/db/schema";
+import { db, type Executor } from "@/server/db/client";
+import { customers, invoices, payments, priceTiers, salesReturns } from "@/server/db/schema";
 import { Forbidden, InvalidState, NotFound } from "@/server/errors";
 
 export const customerInputSchema = z.object({
@@ -20,6 +20,24 @@ export const customerInputSchema = z.object({
 });
 
 export type CustomerInput = z.input<typeof customerInputSchema>;
+
+/**
+ * What the customer owes (spec §4): issued invoice totals − active payments (refunds are negative)
+ * − credit notes. Negative means the store owes the customer credit.
+ */
+export async function customerBalance(tx: Executor, customerId: string): Promise<string> {
+  const [row] = await tx.execute<{ balance: string }>(sql`
+    select (
+      coalesce((select sum(${invoices.total}) from ${invoices}
+                where ${invoices.customerId} = ${customerId} and ${invoices.status} = 'issued'), 0)
+      - coalesce((select sum(${payments.amount}) from ${payments}
+                  where ${payments.customerId} = ${customerId} and ${payments.status} = 'active'), 0)
+      - coalesce((select sum(${salesReturns.total}) from ${salesReturns}
+                  where ${salesReturns.customerId} = ${customerId}), 0)
+    )::numeric(12, 2)::text as balance
+  `);
+  return row.balance;
+}
 
 async function defaultTierId(): Promise<string> {
   const [row] = await db.select({ id: priceTiers.id }).from(priceTiers).where(eq(priceTiers.isDefault, true));
