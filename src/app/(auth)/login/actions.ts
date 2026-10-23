@@ -22,7 +22,11 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
 
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
-  if (error || !data.user) return { error: "Email or password is incorrect", email };
+  if (error || !data.user) {
+    // A wrong password is expected; anything else (Supabase unreachable, bad config) must reach the server logs.
+    if (error?.code !== "invalid_credentials") console.error("Sign-in failed", error);
+    return { error: "Email or password is incorrect", email };
+  }
 
   const user = await loadActiveUser(data.user.id);
   if (!user) {
