@@ -48,6 +48,9 @@ export async function receivePayment(
   if (data.allocations && user.role !== "admin") {
     throw new Forbidden("Only an admin can choose which invoices a payment settles");
   }
+  if (data.paymentDate && data.paymentDate > colomboDate()) {
+    throw new InvalidState("A payment can't be dated in the future");
+  }
 
   return db.transaction(async (tx) => {
     // Lock the customer so concurrent payments/invoices see a consistent outstanding.

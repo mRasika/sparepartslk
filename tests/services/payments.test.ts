@@ -62,6 +62,13 @@ describe("payments", () => {
     expect(err.issues[0].path).toEqual(["reference"]);
   });
 
+  it("refuses a payment dated in the future", async () => {
+    const { customer } = await twoInvoices();
+    await expect(
+      receivePayment(staff, { customerId: customer.id, amount: "100.00", method: "cash", paymentDate: addDays(today, 1) }),
+    ).rejects.toBeInstanceOf(InvalidState);
+  });
+
   it("forbids staff from allocating by hand", async () => {
     const { customer, newer } = await twoInvoices();
     await expect(

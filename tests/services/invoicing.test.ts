@@ -181,6 +181,22 @@ describe("createInvoice", () => {
     });
   });
 
+  it("only lets an admin set the invoice date, and never in the future", async () => {
+    const customer = await makeCustomer({ creditLimit: "100000.00" });
+    const part = await makePart({ qty: 10 });
+    const yesterday = addDays(colomboDate(), -1);
+    const line = [{ partId: part.id, qty: 1 }];
+    await expect(
+      createInvoice(staff, { customerId: customer.id, paymentType: "credit", invoiceDate: yesterday, lines: line }),
+    ).rejects.toBeInstanceOf(Forbidden);
+    await expect(
+      createInvoice(admin, { customerId: customer.id, paymentType: "credit", invoiceDate: addDays(colomboDate(), 1), lines: line }),
+    ).rejects.toBeInstanceOf(InvalidState);
+    const ok = await createInvoice(admin, { customerId: customer.id, paymentType: "credit", invoiceDate: yesterday, lines: line });
+    const [header] = await db.select().from(invoices).where(eq(invoices.id, ok.id));
+    expect(header.invoiceDate).toBe(yesterday);
+  });
+
   it("refuses an inactive customer", async () => {
     const customer = await makeCustomer({ isActive: false });
     const part = await makePart({ qty: 5 });

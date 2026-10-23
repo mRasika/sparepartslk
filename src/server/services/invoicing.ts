@@ -85,6 +85,11 @@ export async function createInvoice(
   if (data.overrideCreditLimit && user.role !== "admin") {
     throw new Forbidden("Only an admin can override a credit limit");
   }
+  // Backdating moves due dates and number years, so it's an admin correction; nobody dates ahead.
+  if (data.invoiceDate && data.invoiceDate !== colomboDate()) {
+    if (user.role !== "admin") throw new Forbidden("Only an admin can date an invoice other than today");
+    if (data.invoiceDate > colomboDate()) throw new InvalidState("An invoice can't be dated in the future");
+  }
 
   return db.transaction(async (tx) => {
     // 1. Settings and customer. The customer row lock serialises credit checks per customer.
