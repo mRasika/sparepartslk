@@ -30,6 +30,8 @@ pnpm dev                     # http://localhost:3000
 ```
 
 Sign in with the admin you just seeded, then add staff under **Users**.
+For realistic test data, run `pnpm db:seed-demo` (local only; production is set up with `db:seed` alone, so it starts empty).
+To start the local database over: `pnpm supabase db reset`, then `pnpm db:migrate`, `pnpm db:seed …` and optionally `pnpm db:seed-demo`.
 `pnpm supabase status` prints the keys again; Supabase Studio runs at <http://127.0.0.1:54323>.
 
 ## Commands
@@ -45,6 +47,7 @@ Sign in with the admin you just seeded, then add staff under **Users**.
 | `pnpm db:generate` | Generate a migration after changing `src/server/db/schema` |
 | `pnpm db:migrate` | Apply migrations (uses `DIRECT_URL`) |
 | `pnpm db:seed` | Base data (price tiers, walk-in customer, settings) and the first admin; safe to re-run |
+| `pnpm db:seed-demo` | **Local testing only.** Loads ~30 parts, suppliers, customers and two months of GRNs, invoices, payments and returns. Refuses any non-local database; loads once |
 
 `supabase start` must be running for `pnpm test` and `pnpm test:e2e`.
 
