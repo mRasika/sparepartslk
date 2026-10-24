@@ -60,6 +60,11 @@ jobs:
       - name: Pull Vercel settings and env vars
         run: vercel pull --yes --environment=${{ steps.target.outputs.environment }} --git-branch="$GITHUB_REF_NAME" --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
 
+      - name: Check pulled env vars (names only)
+        run: |
+          f=.vercel/.env.${{ steps.target.outputs.environment }}.local
+          sed -E 's/^([A-Z0-9_]+)=(""|)$/\1: EMPTY/; s/^([A-Z0-9_]+)=.+$/\1: set/' "$f" | grep -E 'SUPABASE|DATABASE|DIRECT'
+
       - name: Build
         run: vercel build ${{ steps.target.outputs.prod_flag }} --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
 
