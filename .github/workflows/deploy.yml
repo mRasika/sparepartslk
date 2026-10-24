@@ -54,5 +54,5 @@ jobs:
       - name: Point the development URL at this deploy
         if: github.ref_name == 'development'
         run: |
-          vercel alias set "${{ steps.deploy.outputs.url }}" "$DEV_ALIAS" --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
+          vercel alias set "${{ steps.deploy.outputs.url }}" "$DEV_ALIAS" --scope="$VERCEL_TEAM_SLUG" --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
           echo "Development site: https://$DEV_ALIAS" >> "$GITHUB_STEP_SUMMARY"
