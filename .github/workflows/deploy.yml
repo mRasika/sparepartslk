@@ -1,0 +1,68 @@
+# Deploys to the Vercel account that hosts this project. That account has no GitHub
+# connection (GitHub is linked to a different Vercel account), so CI builds the app and
+# uploads the prebuilt output with a token instead of relying on Vercel's Git integration.
+#   main        -> production (sparepartslk.vercel.app)
+#   development -> preview, aliased to a stable URL for testing
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main, development]
+  workflow_dispatch:
+
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERCEL_ORG_ID: team_LUHAZY3yPIoEvhIPyhoG3AY8
+  VERCEL_PROJECT_ID: prj_eF3t2Ul1JwL7IhCwYEIygDRAAmSP
+  DEV_ALIAS: sparepartslk-development.vercel.app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pick target
+        id: target
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+            echo "prod_flag=--prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=preview" >> "$GITHUB_OUTPUT"
+            echo "prod_flag=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Supabase keys and database URLs come from the Vercel project's environment variables.
+      - name: Pull Vercel settings and env vars
+        run: vercel pull --yes --environment=${{ steps.target.outputs.environment }} --git-branch="$GITHUB_REF_NAME" --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        run: vercel build ${{ steps.target.outputs.prod_flag }} --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt ${{ steps.target.outputs.prod_flag }} --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Point the development URL at this deploy
+        if: github.ref_name == 'development'
+        run: |
+          vercel alias set "${{ steps.deploy.outputs.url }}" "$DEV_ALIAS" --token=${{ secrets.VERCEL_TOKEN }}
+          echo "Development site: https://$DEV_ALIAS" >> "$GITHUB_STEP_SUMMARY"
