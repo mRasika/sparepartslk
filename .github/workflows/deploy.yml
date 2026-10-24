@@ -51,8 +51,17 @@ jobs:
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
 
+      # Calls the API directly: `vercel alias` looks up the token's user, which fails for a team-scoped token.
       - name: Point the development URL at this deploy
         if: github.ref_name == 'development'
+        env:
+          VERCEL_TOKEN: ${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
         run: |
-          vercel alias set "${{ steps.deploy.outputs.url }}" "$DEV_ALIAS" --scope="$VERCEL_TEAM_SLUG" --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
+          api="https://api.vercel.com"
+          auth="Authorization: Bearer $VERCEL_TOKEN"
+          deployment_id=$(curl -sSf -H "$auth" "$api/v13/deployments/${DEPLOY_URL#https://}?slug=$VERCEL_TEAM_SLUG" | jq -r .id)
+          curl -sSf -X POST -H "$auth" -H "Content-Type: application/json" \
+            -d "{\"alias\":\"$DEV_ALIAS\"}" \
+            "$api/v2/deployments/$deployment_id/aliases?slug=$VERCEL_TEAM_SLUG" | jq -r '"Aliased \(.alias)"'
           echo "Development site: https://$DEV_ALIAS" >> "$GITHUB_STEP_SUMMARY"
