@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  VERCEL_ORG_ID: team_LUHAZY3yPIoEvhIPyhoG3AY8
-  VERCEL_PROJECT_ID: prj_eF3t2Ul1JwL7IhCwYEIygDRAAmSP
+  VERCEL_TEAM_SLUG: hobby-daa6
+  VERCEL_PROJECT_ID: prj_qQMSIB0qLmOFJ2JXDtse84LKfdND
   DEV_ALIAS: sparepartslk-development.vercel.app
 
 jobs:
@@ -32,6 +32,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      # The CLI needs the team's ID; look it up from the slug (also fails fast if the token can't see the project).
+      - name: Resolve Vercel team ID
+        env:
+          VERCEL_TOKEN: ${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
+        run: |
+          org_id=$(curl -sSf -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?slug=$VERCEL_TEAM_SLUG" | jq -r .accountId)
+          echo "VERCEL_ORG_ID=$org_id" >> "$GITHUB_ENV"
 
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
