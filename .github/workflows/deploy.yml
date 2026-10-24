@@ -1,6 +1,7 @@
 # Deploys to the Vercel account that hosts this project. That account has no GitHub
-# connection (GitHub is linked to a different Vercel account), so CI builds the app and
-# uploads the prebuilt output with a token instead of relying on Vercel's Git integration.
+# connection (GitHub is linked to a different Vercel account), so pushes don't reach it on
+# their own; CI uploads the source with a token and Vercel builds it. The build has to run
+# on Vercel because the env vars are marked Sensitive, and Vercel never hands those out.
 #   main        -> production (sparepartslk.vercel.app)
 #   development -> preview, aliased to a stable URL for testing
 name: Deploy to Vercel
@@ -25,10 +26,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.9
-
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -45,33 +42,12 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      - name: Pick target
-        id: target
-        run: |
-          if [ "$GITHUB_REF_NAME" = "main" ]; then
-            echo "environment=production" >> "$GITHUB_OUTPUT"
-            echo "prod_flag=--prod" >> "$GITHUB_OUTPUT"
-          else
-            echo "environment=preview" >> "$GITHUB_OUTPUT"
-            echo "prod_flag=" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Supabase keys and database URLs come from the Vercel project's environment variables.
-      - name: Pull Vercel settings and env vars
-        run: vercel pull --yes --environment=${{ steps.target.outputs.environment }} --git-branch="$GITHUB_REF_NAME" --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
-
-      - name: Check pulled env vars (names only)
-        run: |
-          f=.vercel/.env.${{ steps.target.outputs.environment }}.local
-          sed -E 's/^([A-Z0-9_]+)=(""|)$/\1: EMPTY/; s/^([A-Z0-9_]+)=.+$/\1: set/' "$f" | grep -E 'SUPABASE|DATABASE|DIRECT'
-
-      - name: Build
-        run: vercel build ${{ steps.target.outputs.prod_flag }} --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
-
       - name: Deploy
         id: deploy
         run: |
-          url=$(vercel deploy --prebuilt ${{ steps.target.outputs.prod_flag }} --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }})
+          prod_flag=""
+          if [ "$GITHUB_REF_NAME" = "main" ]; then prod_flag="--prod"; fi
+          url=$(vercel deploy $prod_flag --yes --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }})
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
 
