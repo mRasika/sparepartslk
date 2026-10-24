@@ -49,20 +49,20 @@ jobs:
 
       # Supabase keys and database URLs come from the Vercel project's environment variables.
       - name: Pull Vercel settings and env vars
-        run: vercel pull --yes --environment=${{ steps.target.outputs.environment }} --git-branch="$GITHUB_REF_NAME" --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=${{ steps.target.outputs.environment }} --git-branch="$GITHUB_REF_NAME" --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
 
       - name: Build
-        run: vercel build ${{ steps.target.outputs.prod_flag }} --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel build ${{ steps.target.outputs.prod_flag }} --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
 
       - name: Deploy
         id: deploy
         run: |
-          url=$(vercel deploy --prebuilt ${{ steps.target.outputs.prod_flag }} --token=${{ secrets.VERCEL_TOKEN }})
+          url=$(vercel deploy --prebuilt ${{ steps.target.outputs.prod_flag }} --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }})
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Point the development URL at this deploy
         if: github.ref_name == 'development'
         run: |
-          vercel alias set "${{ steps.deploy.outputs.url }}" "$DEV_ALIAS" --token=${{ secrets.VERCEL_TOKEN }}
+          vercel alias set "${{ steps.deploy.outputs.url }}" "$DEV_ALIAS" --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
           echo "Development site: https://$DEV_ALIAS" >> "$GITHUB_STEP_SUMMARY"
