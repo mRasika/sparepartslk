@@ -1,21 +1,15 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui/command";
-import type { ActionResult } from "@/lib/action-result";
 import { cn } from "@/lib/utils";
-import { searchPartsAction } from "@/server/actions/catalog";
 import type { PartListRow } from "@/server/services/catalog";
 
 export type PickedPart = Pick<PartListRow, "id" | "sku" | "name" | "oemPartNo" | "qtyOnHand" | "unit"> & {
   /** Set when the search is priced for a customer. */
   price?: string;
 };
-
-type Search = (q: string) => Promise<ActionResult<PickedPart[]>>;
-
-const defaultSearch: Search = (q) => searchPartsAction(q, { limit: 12 });
 
 /**
  * Type-to-search part finder. Arrow keys move, Enter picks; the input clears and keeps focus
@@ -27,9 +21,10 @@ export function PartPicker({
   placeholder = "Find a part: SKU, OEM no, barcode or name",
   autoFocus,
   inputRef,
-  search = defaultSearch,
+  customerId,
 }: {
-  search?: Search;
+  /** Price the results for this customer. */
+  customerId?: string;
   onPick: (part: PickedPart) => void;
   /** Extra text shown on each result, e.g. the customer's price. */
   meta?: (part: PickedPart) => React.ReactNode;
@@ -41,7 +36,6 @@ export function PartPicker({
   const [results, setResults] = useState<PickedPart[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
-  const requestId = useRef(0);
 
   useEffect(() => {
     const q = query.trim();
@@ -49,16 +43,28 @@ export function PartPicker({
       setResults([]);
       return;
     }
-    const id = ++requestId.current;
+    const controller = new AbortController();
     setLoading(true);
     const timer = setTimeout(async () => {
-      const result = await search(q);
-      if (id !== requestId.current) return;
-      setResults(result.ok ? result.data : []);
-      setLoading(false);
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [query, search]);
+      const params = new URLSearchParams({ q });
+      if (customerId) params.set("customerId", customerId);
+      try {
+        const res = await fetch(`/api/parts/search?${params}`, { signal: controller.signal });
+        setResults(res.ok ? await res.json() : []);
+        setLoading(false);
+      } catch {
+        // Aborted by a newer keystroke (which owns loading now) or a network failure.
+        if (!controller.signal.aborted) {
+          setResults([]);
+          setLoading(false);
+        }
+      }
+    }, 150);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, customerId]);
 
   function pick(part: PickedPart) {
     onPick(part);

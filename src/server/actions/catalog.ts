@@ -5,7 +5,6 @@ import { runAction } from "@/lib/action-result";
 import { requireUser } from "@/server/auth";
 import {
   createPart,
-  searchParts,
   updatePart,
   upsertBrand,
   upsertCategory,
@@ -29,14 +28,6 @@ export async function updatePartAction(id: string, input: PartInput) {
     revalidatePath("/parts");
     revalidatePath(`/parts/${id}`);
     return { id };
-  });
-}
-
-/** Active parts only; used by pickers (billing, GRN, adjustments). */
-export async function searchPartsAction(q: string, opts: { vehicleModelId?: string; limit?: number } = {}) {
-  return runAction(async () => {
-    await requireUser();
-    return searchParts(q, { ...opts, activeOnly: true });
   });
 }
 

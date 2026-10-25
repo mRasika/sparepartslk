@@ -19,11 +19,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import type { ActionError } from "@/lib/action-result";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import {
-  createInvoiceAction,
-  previewInvoiceAction,
-  searchPartsForCustomerAction,
-} from "@/server/actions/invoices";
+import { createInvoiceAction, previewInvoiceAction } from "@/server/actions/invoices";
 import type { InvoiceInput } from "@/server/services/invoicing";
 import type { Totals } from "@/server/services/pricing";
 import { CustomerPicker, type PickedCustomer } from "./customer-picker";
@@ -144,11 +140,6 @@ export function InvoiceEditor({
     });
   }
 
-  const searchForCustomer = useCallback(
-    (q: string) => searchPartsForCustomerAction(q, customer.id),
-    [customer.id],
-  );
-
   const generalError = error && !(error.details as { partId?: string } | undefined)?.partId ? error : null;
 
   return (
@@ -198,7 +189,7 @@ export function InvoiceEditor({
           lines={lines}
           onChange={setLines}
           pickerInputRef={pickerRef}
-          pickerSearch={searchForCustomer}
+          pickerCustomerId={customer.id}
           pickerMeta={(p) =>
             p.price ? (
               <div className="font-medium">Rs {formatMoney(p.price)}</div>
