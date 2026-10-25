@@ -7,7 +7,7 @@ import { escapeLike } from "@/lib/sql-text";
 import { moneyString, optionalText } from "@/lib/validation";
 import type { SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
-import { customers, paymentAllocations, payments, profiles } from "@/server/db/schema";
+import { customers, invoices, paymentAllocations, payments, profiles } from "@/server/db/schema";
 import { Forbidden, InvalidState, NotFound } from "@/server/errors";
 import { outstandingInvoices } from "@/server/services/customers";
 import { nextNumber } from "@/server/services/sequences";
@@ -139,8 +139,10 @@ export async function listPayments(filters: { q?: string; customerId?: string } 
       status: payments.status,
       invoiceId: payments.invoiceId,
       createdByName: profiles.fullName,
+      // Allocations to a cancelled invoice don't use up a payment (the credit went back to the account).
       allocated: sql<string>`coalesce((select sum(${paymentAllocations.amount}) from ${paymentAllocations}
-        where ${paymentAllocations.paymentId} = ${payments.id}), 0)::numeric(12, 2)::text`,
+        join ${invoices} on ${invoices.id} = ${paymentAllocations.invoiceId}
+        where ${paymentAllocations.paymentId} = ${payments.id} and ${invoices.status} = 'issued'), 0)::numeric(12, 2)::text`,
     })
     .from(payments)
     .innerJoin(customers, eq(customers.id, payments.customerId))

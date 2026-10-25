@@ -240,6 +240,8 @@ export const paymentAllocations = pgTable(
       .notNull()
       .references(() => invoices.id),
     amount: money("amount").notNull(),
+    /** Made by apply_held_credit from money already on the account (spec: held credit). */
+    fromCredit: boolean("from_credit").notNull().default(false),
   },
   (t) => [
     check("payment_allocations_amount_positive", sql`${t.amount} > 0`),
