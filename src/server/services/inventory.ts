@@ -181,9 +181,12 @@ export type StockRow = {
 /** Stock on hand. Admins also get average cost and stock value (qty × avg cost). */
 export async function stockList(
   user: SessionUser,
-  filters: { q?: string; categoryId?: string; lowOnly?: boolean },
+  filters: { q?: string; categoryId?: string; lowOnly?: boolean; partIds?: string[] },
 ): Promise<StockRow[]> {
+  // Narrowed to given parts (the Stock page's health filters) in SQL, so the row limit comes after.
+  if (filters.partIds && filters.partIds.length === 0) return [];
   const where: SQL[] = [];
+  if (filters.partIds) where.push(inArray(parts.id, filters.partIds));
   const q = filters.q?.trim();
   if (q) {
     const like = `%${escapeLike(q)}%`;
