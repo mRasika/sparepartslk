@@ -1,5 +1,6 @@
 import { AlertTriangle, Clock, FilePen, FilePlus, PackageOpen } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { colomboDate } from "@/lib/dates";
@@ -9,9 +10,11 @@ import { requireUser } from "@/server/auth";
 import { getDashboard } from "@/server/services/dashboard";
 import { countInvoiceDrafts } from "@/server/services/invoice-drafts";
 import { ResolveIssueButton } from "./resolve-issue-button";
+import { type SalesParams, SalesSection, SalesSectionSkeleton } from "./sales-section";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<SalesParams> }) {
   const user = await requireUser();
+  const params = await searchParams;
   const [d, draftCount] = await Promise.all([getDashboard(user), countInvoiceDrafts()]);
   const overdue = D(d.totalOverdue).greaterThan(0);
 
@@ -102,6 +105,13 @@ export default async function DashboardPage() {
           status={d.lowStockCount > 0 ? { icon: AlertTriangle, tone: "warning" } : undefined}
         />
       </dl>
+
+      {user.role === "admin" && (
+        // Keyed by the query so changing the period re-suspends here, not the whole page.
+        <Suspense key={JSON.stringify(params)} fallback={<SalesSectionSkeleton />}>
+          <SalesSection user={user} params={params} />
+        </Suspense>
+      )}
     </div>
   );
 }
