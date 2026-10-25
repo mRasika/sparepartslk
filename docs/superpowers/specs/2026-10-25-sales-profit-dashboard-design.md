@@ -62,7 +62,7 @@ All dates are business dates in Colombo time (`colomboDate`). Weeks start on Mon
 | **Avg sale** | Invoice net sales ÷ number of issued invoices (returns not subtracted). |
 | Cash vs credit | Invoice net sales split by `invoices.payment_type`. Returns are not split. It shows how the shop sold, not how it got paid. |
 
-**Per-line figures (top sellers).** A line's net amount is `line_total × (subtotal − discount_total) / subtotal` of its invoice, so the invoice-level discount is shared across lines in proportion and part totals add up to invoice net sales. Returned lines subtract their net amount (the return ratio above applied to `sales_return_items.line_total`), their qty, and — when restocked — their cost. Parts with no category or brand appear as "Uncategorised" / "No brand".
+**Per-line figures (top sellers).** A line's net amount is `line_total × (subtotal − discount_total) / subtotal` of its invoice, so the invoice-level discount is shared across lines in proportion and part totals add up to invoice net sales (each row is rounded to cents, so a sum can differ by at most Rs 0.01 per row). Returned lines subtract their net amount (the return ratio above applied to `sales_return_items.line_total`), their qty, and — when restocked — their cost. Parts with no category or brand appear as "Uncategorised" / "No brand". Parts with no bike model are left out of the Bike models tab.
 
 ## 4. Periods and comparison
 
