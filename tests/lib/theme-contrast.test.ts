@@ -78,3 +78,21 @@ describe("chart colours", () => {
     expect(contrast(dark[token], dark.card)).toBeGreaterThanOrEqual(3);
   });
 });
+
+// Aging bar steps (later = stronger): ordinal marks with their amounts printed beside them,
+// so each step needs 2:1 against the card.
+describe("aging colours", () => {
+  const STEPS = ["aging-1", "aging-2", "aging-3", "aging-4"];
+
+  it.each(STEPS)("light --%s stands out on the card", (token) => {
+    const hex = tokensOf(":root")[token];
+    expect(hex).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(contrast(hex, "#ffffff")).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each(STEPS)("dark --%s stands out on the card", (token) => {
+    const dark = darkTokens();
+    expect(dark[token]).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(contrast(dark[token], dark.card)).toBeGreaterThanOrEqual(2);
+  });
+});

@@ -23,6 +23,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-aging-1: var(--aging-1);
+  --color-aging-2: var(--aging-2);
+  --color-aging-3: var(--aging-3);
+  --color-aging-4: var(--aging-4);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -76,6 +80,11 @@
   --chart-3: #1baf7a;
   --chart-4: #6250d6;
   --chart-5: oklch(0.269 0 0);
+  /* How late (1–30 … over 90 days): one blue ramp, later = stronger. Ordinal, validated. */
+  --aging-1: #86b6ef;
+  --aging-2: #5598e7;
+  --aging-3: #2a78d6;
+  --aging-4: #1c5cab;
   --radius: 0.5rem;
   /* Amber: low-stock and attention states only. */
   --warning: #f2b33d;
@@ -115,6 +124,10 @@
   --chart-3: #199e70;
   --chart-4: #9085e9;
   --chart-5: #2b3c40;
+  --aging-1: #1c5cab;
+  --aging-2: #2a78d6;
+  --aging-3: #5598e7;
+  --aging-4: #86b6ef;
   --warning: #f2b33d;
   /* Used as warning text on the page and cards, so light in dark mode. */
   --warning-foreground: #f5c56b;

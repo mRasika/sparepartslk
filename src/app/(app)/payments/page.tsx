@@ -13,20 +13,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { AGING_GROUPS, agingGroup, isAgingGroupKey, outstandingHref, type AgingGroupKey } from "@/lib/aging";
+import { colomboDate } from "@/lib/dates";
 import { formatDate, formatMoney } from "@/lib/format";
 import { D, fmt, sum } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth";
+import { getCreditSummary } from "@/server/services/credit";
 import { outstandingInvoices } from "@/server/services/customers";
 import { listPayments } from "@/server/services/payments";
+import { CreditSummary } from "./credit-summary";
 
-type SearchParams = Promise<{ view?: string; q?: string; overdue?: string }>;
+type SearchParams = Promise<{ view?: string; q?: string; overdue?: string; late?: string; by?: string }>;
 
 const METHOD_LABELS = { cash: "Cash", bank: "Bank", cheque: "Cheque" } as const;
 
 export default async function PaymentsPage({ searchParams }: { searchParams: SearchParams }) {
   await requireUser();
-  const { view = "payments", q = "", overdue = "" } = await searchParams;
+  const { view = "payments", q = "", overdue = "", late, by } = await searchParams;
   const showOutstanding = view === "outstanding";
 
   return (
@@ -61,7 +65,15 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Sea
           );
         })}
       </nav>
-      {showOutstanding ? <Outstanding overdueOnly={overdue === "1"} /> : <Received q={q} />}
+      {showOutstanding ? (
+        <Outstanding
+          overdueOnly={overdue === "1"}
+          late={isAgingGroupKey(late) ? late : null}
+          by={by === "overdue" ? "overdue" : "owed"}
+        />
+      ) : (
+        <Received q={q} />
+      )}
     </div>
   );
 }
@@ -135,27 +147,49 @@ async function Received({ q }: { q: string }) {
   );
 }
 
-async function Outstanding({ overdueOnly }: { overdueOnly: boolean }) {
-  const rows = await outstandingInvoices({ overdueOnly });
+async function Outstanding({
+  overdueOnly: overdueParam,
+  late,
+  by,
+}: {
+  overdueOnly: boolean;
+  late: AgingGroupKey | null;
+  by: "owed" | "overdue";
+}) {
+  // One aging group, when chosen, wins over "Overdue only".
+  const overdueOnly = overdueParam && !late;
+  const today = colomboDate();
+  const [summary, all] = await Promise.all([getCreditSummary(by, today), outstandingInvoices({ overdueOnly })]);
+  const rows = late ? all.filter((r) => agingGroup(r.dueDate, today) === late) : all;
   const total = fmt(sum(rows.map((r) => D(r.outstanding))));
+  const lateLabel = AGING_GROUPS.find((g) => g.key === late)?.label;
   return (
     <>
+      <CreditSummary summary={summary} late={late} by={by} overdueOnly={overdueOnly} />
       <div className="mb-4 flex gap-2">
         <Link
-          href="/payments?view=outstanding"
-          className={buttonVariants({ variant: overdueOnly ? "ghost" : "secondary" })}
-          aria-current={!overdueOnly ? "page" : undefined}
+          href={outstandingHref({ by })}
+          className={buttonVariants({ variant: overdueOnly || late ? "ghost" : "secondary" })}
+          aria-current={!overdueOnly && !late ? "page" : undefined}
         >
           All unpaid
         </Link>
         <Link
-          href="/payments?view=outstanding&overdue=1"
+          href={outstandingHref({ by, overdue: true })}
           className={buttonVariants({ variant: overdueOnly ? "secondary" : "ghost" })}
           aria-current={overdueOnly ? "page" : undefined}
         >
           Overdue only
         </Link>
       </div>
+      {lateLabel && (
+        <p className="mb-3 text-sm text-muted-foreground">
+          Showing {lateLabel} ·{" "}
+          <Link href={outstandingHref({ by })} className="font-medium text-primary hover:underline">
+            Show all
+          </Link>
+        </p>
+      )}
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>
@@ -172,7 +206,7 @@ async function Outstanding({ overdueOnly }: { overdueOnly: boolean }) {
             {rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                  {overdueOnly ? "Nothing is overdue." : "Every invoice is paid."}
+                  {late ? "Nothing in this group." : overdueOnly ? "Nothing is overdue." : "Every invoice is paid."}
                 </TableCell>
               </TableRow>
             )}
@@ -206,7 +240,7 @@ async function Outstanding({ overdueOnly }: { overdueOnly: boolean }) {
             <TableFooter>
               <TableRow>
                 <TableCell colSpan={5} className="text-right font-medium">
-                  {overdueOnly ? "Total overdue" : "Total owed"}
+                  {late ? "Total in group" : overdueOnly ? "Total overdue" : "Total owed"}
                 </TableCell>
                 <TableCell className="text-right font-semibold tabular-nums">{formatMoney(total)}</TableCell>
               </TableRow>
