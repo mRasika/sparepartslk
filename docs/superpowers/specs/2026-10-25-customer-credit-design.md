@@ -41,7 +41,7 @@ All dates are Colombo business dates (`colomboDate()`). "Open invoice" and "owed
 | Figure | Definition |
 |---|---|
 | **Owed** | Sum of `outstanding` over open invoices. Sub-line: number of customers with an open invoice. |
-| **Unapplied credit** | Per customer: owed on open invoices − account balance (`customerBalance`: issued totals − active payments − credit notes). When > 0 it is money paid that isn't matched to an invoice. If the sum over customers is > 0, a note under Owed reads "Rs X paid in advance, not yet matched to invoices". |
+| **Unapplied credit** | Per customer, over **all** customers (also those with nothing open, e.g. a prepayment): owed on open invoices − account balance (`customerBalance`: issued totals − active payments − credit notes), counted when > 0. It is money paid that isn't matched to an invoice. If the total is > 0, a note under Owed reads "Rs X paid in advance, not yet matched to invoices". |
 | **Overdue** | Sum of `outstanding` over open invoices with `due_date < today`. Sub-line: % of owed (whole %, "0%" when owed is 0) and number of customers with an overdue invoice. |
 | **Due in next 7 days** | Sum of `outstanding` over open invoices with `today ≤ due_date ≤ today + 6`. Sub-line: number of those invoices. |
 | **Days to collect (DSO)** | `owed ÷ credit sales in the last 90 days × 90`, rounded to whole days. Credit sales = sum of `total` of issued invoices with `payment_type = 'credit'` and `invoice_date` in `[today − 89, today]`. When credit sales are 0: shows "—" with the sub-line "no credit sales in 90 days". |
@@ -71,7 +71,7 @@ The existing list keeps "All unpaid" and "Overdue only". Clicking an aging group
 - **`src/lib/aging.ts`** — pure, no database:
   - `agingGroup(dueDate, today)` → group key.
   - `summarizeCredit(input)` → tiles, groups, customer rows, from plain arrays (open invoices, customer facts, credit sales, today). Money as strings via `@/lib/money`.
-- **`src/server/services/credit.ts`** — `getCreditSummary(): Promise<CreditSummary>`: runs `outstandingInvoices()` (reused, so Owed matches the list), one query for customer facts (credit limit, account balance, last payment date) for customers with open invoices, one query for 90-day credit sales; passes them to `summarizeCredit`. No role check beyond the page's `requireUser()` (admin and staff).
+- **`src/server/services/credit.ts`** — `getCreditSummary(): Promise<CreditSummary>`: runs `outstandingInvoices()` (reused, so Owed matches the list), one query for customer facts (credit limit, account balance, last payment date) for every customer with an open invoice or a non-zero balance, one query for 90-day credit sales; passes them to `summarizeCredit`. No role check beyond the page's `requireUser()` (admin and staff).
 - **UI** — `src/app/(app)/payments/credit-summary.tsx` (server component) rendered at the top of the Outstanding view; the existing `Outstanding` component gains the `late` filter. Search params: `view`, `overdue`, `late`, `by`.
 
 ## 7. Testing
