@@ -13,22 +13,50 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatMoney } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { D, fmt, sum } from "@/lib/money";
+import { ABC_CLASSES, isAbcClass, isStockAgeBand, STOCK_AGE_BANDS, type AbcClass, type StockAgeBand } from "@/lib/stock-health";
 import { requireUser } from "@/server/auth";
 import { listCategories } from "@/server/services/catalog";
 import { stockList } from "@/server/services/inventory";
+import { getStockHealth } from "@/server/services/stock-health";
+import { classLabel, StockHealthSummary } from "./stock-health";
 
-type SearchParams = Promise<{ q?: string; category?: string; low?: string }>;
+type SearchParams = Promise<{ q?: string; category?: string; low?: string; age?: string; class?: string }>;
 
 export default async function StockPage({ searchParams }: { searchParams: SearchParams }) {
   const user = await requireUser();
-  const { q = "", category = "", low = "" } = await searchParams;
-  const [rows, categories] = await Promise.all([
-    stockList(user, { q, categoryId: category || undefined, lowOnly: low === "1" }),
-    listCategories(),
-  ]);
+  const { q = "", category = "", low = "", ...params } = await searchParams;
   const isAdmin = user.role === "admin";
+  // Health filters are admin-only; for staff the params are ignored.
+  const age: StockAgeBand | null = isAdmin && isStockAgeBand(params.age) ? params.age : null;
+  const cls: AbcClass | null = isAdmin && !age && isAbcClass(params.class) ? params.class : null;
+  const [categories, health] = await Promise.all([listCategories(), isAdmin ? getStockHealth(user) : null]);
+  // A band or class narrows the list in SQL (by part id), so the list's row limit comes after it.
+  const partIds =
+    health && (age || cls)
+      ? Object.entries(health.byPart)
+          .filter(([, h]) => (age ? h.band === age : h.cls === cls))
+          .map(([id]) => id)
+      : undefined;
+  const rows = await stockList(user, { q, categoryId: category || undefined, lowOnly: low === "1", partIds });
+  const partHealth = (id: string) => health?.byPart[id] ?? { lastSoldOn: null, band: null, cls: "none" as const };
+  /** /stock keeping the search, category and low filters; one health filter at a time. */
+  const hrefFor = (f: { age?: StockAgeBand; cls?: AbcClass }) => {
+    const p = new URLSearchParams();
+    if (q) p.set("q", q);
+    if (category) p.set("category", category);
+    if (low === "1") p.set("low", "1");
+    if (f.age) p.set("age", f.age);
+    if (f.cls) p.set("class", f.cls);
+    const s = p.toString();
+    return s ? `/stock?${s}` : "/stock";
+  };
+  const filterLabel = age
+    ? STOCK_AGE_BANDS.find((b) => b.key === age)?.label
+    : cls
+      ? `class ${ABC_CLASSES.find((c) => c.key === cls)?.label}`
+      : null;
   const totalValue = isAdmin ? fmt(sum(rows.map((r) => D(r.stockValue ?? "0")))) : null;
 
   return (
@@ -47,7 +75,10 @@ export default async function StockPage({ searchParams }: { searchParams: Search
           </>
         }
       />
+      {health && <StockHealthSummary health={health} age={age} cls={cls} hrefFor={hrefFor} />}
       <form className="mb-4 flex flex-wrap items-center gap-2" role="search">
+        {age && <input type="hidden" name="age" value={age} />}
+        {cls && <input type="hidden" name="class" value={cls} />}
         <Input name="q" defaultValue={q} placeholder="SKU, name or OEM no" aria-label="Search stock" className="w-full sm:w-64" />
         <NativeSelect name="category" defaultValue={category} aria-label="Category">
           <NativeSelectOption value="">All categories</NativeSelectOption>
@@ -65,6 +96,14 @@ export default async function StockPage({ searchParams }: { searchParams: Search
           Show
         </Button>
       </form>
+      {filterLabel && (
+        <p className="mb-3 text-sm text-muted-foreground">
+          Showing {filterLabel} ·{" "}
+          <Link href={hrefFor({})} className="font-medium text-primary hover:underline">
+            Show all
+          </Link>
+        </p>
+      )}
 
       <div className="rounded-lg border bg-card">
         <Table>
@@ -78,12 +117,14 @@ export default async function StockPage({ searchParams }: { searchParams: Search
               <TableHead className="hidden text-right sm:table-cell">Reorder at</TableHead>
               {isAdmin && <TableHead className="hidden text-right md:table-cell">Avg cost</TableHead>}
               {isAdmin && <TableHead className="text-right">Value (Rs)</TableHead>}
+              {isAdmin && <TableHead className="hidden md:table-cell">Last sold</TableHead>}
+              {isAdmin && <TableHead>Class</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
                   No parts match.
                 </TableCell>
               </TableRow>
@@ -106,6 +147,12 @@ export default async function StockPage({ searchParams }: { searchParams: Search
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">{r.reorderLevel || "–"}</TableCell>
                   {isAdmin && <TableCell className="hidden text-right tabular-nums md:table-cell">{formatMoney(r.avgCost)}</TableCell>}
                   {isAdmin && <TableCell className="text-right tabular-nums">{formatMoney(r.stockValue)}</TableCell>}
+                  {isAdmin && (
+                    <TableCell className="hidden whitespace-nowrap md:table-cell">
+                      {partHealth(r.id).lastSoldOn ? formatDate(partHealth(r.id).lastSoldOn!) : "Never"}
+                    </TableCell>
+                  )}
+                  {isAdmin && <TableCell>{classLabel(partHealth(r.id).cls)}</TableCell>}
                 </TableRow>
               );
             })}
@@ -117,6 +164,7 @@ export default async function StockPage({ searchParams }: { searchParams: Search
                   Stock value of the parts shown
                 </TableCell>
                 <TableCell className="text-right font-semibold tabular-nums">{formatMoney(totalValue)}</TableCell>
+                <TableCell colSpan={2} />
               </TableRow>
             </TableFooter>
           )}
