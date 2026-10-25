@@ -1,14 +1,14 @@
-import { AlertTriangle, Clock, FilePen, FilePlus, PackageOpen } from "lucide-react";
+import { AlertTriangle, FilePlus, PackageOpen } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { buttonVariants } from "@/components/ui/button";
+import { attentionItems } from "@/lib/attention";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { colomboDate } from "@/lib/dates";
-import { D } from "@/lib/money";
-import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth";
 import { getDashboard } from "@/server/services/dashboard";
 import { countInvoiceDrafts } from "@/server/services/invoice-drafts";
+import { NeedsAttention } from "./needs-attention";
 import { ResolveIssueButton } from "./resolve-issue-button";
 import { type SalesParams, SalesSection, SalesSectionSkeleton } from "./sales-section";
 
@@ -16,14 +16,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const user = await requireUser();
   const params = await searchParams;
   const [d, draftCount] = await Promise.all([getDashboard(user), countInvoiceDrafts()]);
-  const overdue = D(d.totalOverdue).greaterThan(0);
+  const today = colomboDate();
+  const attention = attentionItems({ ...d, draftCount });
 
   return (
-    <div className="max-w-5xl">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex max-w-5xl flex-col gap-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Today</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{formatDate(colomboDate())}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Today <span className="text-base font-normal text-muted-foreground">· {formatDate(today)}</span>
+          </h1>
+          <p className="mt-1 text-muted-foreground">
+            <span className="font-semibold text-foreground tabular-nums">Rs {formatMoney(d.todaySales)}</span> sold
+            today · {d.todayInvoiceCount} {d.todayInvoiceCount === 1 ? "invoice" : "invoices"}
+            {d.todayInvoiceCount > 0 && (
+              <>
+                {" · "}
+                <Link href={`/invoices?from=${today}&to=${today}`} className="text-primary hover:underline">
+                  View
+                </Link>
+              </>
+            )}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/grn/new" className={buttonVariants({ variant: "outline" })}>
@@ -36,7 +50,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
 
       {d.reconciliationIssues && d.reconciliationIssues.length > 0 && (
-        <section role="alert" className="mb-6 rounded-lg border border-warning bg-warning/15 p-4">
+        <section role="alert" className="rounded-lg border border-warning bg-warning/15 p-4">
           <h2 className="flex items-center gap-2 font-semibold text-warning-foreground">
             <AlertTriangle className="size-4" aria-hidden /> Stock check found {d.reconciliationIssues.length}{" "}
             {d.reconciliationIssues.length === 1 ? "mismatch" : "mismatches"}
@@ -66,45 +80,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </section>
       )}
 
-      {draftCount > 0 && (
-        <Link
-          href="/invoices/new"
-          className="mb-6 flex items-center gap-3 rounded-lg border bg-card px-4 py-3 text-sm transition-colors hover:border-ring"
-        >
-          <FilePen className="size-4 text-muted-foreground" aria-hidden />
-          <span className="flex-1">
-            <span className="font-medium">
-              {draftCount} unfinished {draftCount === 1 ? "invoice" : "invoices"}
-            </span>{" "}
-            <span className="text-muted-foreground">waiting to be completed</span>
-          </span>
-          <span className="font-medium">Continue</span>
-        </Link>
-      )}
-
-      <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile label="Sales today" value={`Rs ${formatMoney(d.todaySales)}`} note={`${d.todayInvoiceCount} ${d.todayInvoiceCount === 1 ? "invoice" : "invoices"}`} href="/invoices" />
-        <Tile
-          label="Owed by customers"
-          value={`Rs ${formatMoney(d.totalOutstanding)}`}
-          note="All unpaid invoices"
-          href="/payments?view=outstanding"
-        />
-        <Tile
-          label="Overdue"
-          value={`Rs ${formatMoney(d.totalOverdue)}`}
-          note={overdue ? "Past the due date" : "Nothing overdue"}
-          href="/payments?view=outstanding&overdue=1"
-          status={overdue ? { icon: Clock, tone: "critical" } : undefined}
-        />
-        <Tile
-          label="Low stock"
-          value={String(d.lowStockCount)}
-          note={d.lowStockCount === 1 ? "part to reorder" : "parts to reorder"}
-          href="/low-stock"
-          status={d.lowStockCount > 0 ? { icon: AlertTriangle, tone: "warning" } : undefined}
-        />
-      </dl>
+      <NeedsAttention items={attention.items} owedNote={attention.owedNote} />
 
       {user.role === "admin" && (
         // Keyed by the query so changing the period re-suspends here, not the whole page.
@@ -113,41 +89,5 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </Suspense>
       )}
     </div>
-  );
-}
-
-function Tile({
-  label,
-  value,
-  note,
-  href,
-  status,
-}: {
-  label: string;
-  value: string;
-  note: string;
-  href: string;
-  status?: { icon: typeof Clock; tone: "warning" | "critical" };
-}) {
-  const Icon = status?.icon;
-  return (
-    <Link
-      href={href}
-      className="group rounded-lg border bg-card p-5 transition-colors hover:border-ring focus-visible:outline-2 focus-visible:outline-ring"
-    >
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="mt-2 text-2xl font-semibold tabular-nums tracking-tight">{value}</dd>
-      <dd
-        className={cn(
-          "mt-1 flex items-center gap-1.5 text-sm",
-          status?.tone === "critical" && "font-medium text-destructive",
-          status?.tone === "warning" && "font-medium text-warning-foreground",
-          !status && "text-muted-foreground",
-        )}
-      >
-        {Icon && <Icon className={cn("size-4", status?.tone === "warning" && "text-warning")} aria-hidden />}
-        {note}
-      </dd>
-    </Link>
   );
 }

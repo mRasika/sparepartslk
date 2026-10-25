@@ -69,10 +69,12 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: #3d7d88;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
+  /* Chart series, in this order: blue, orange, aqua, violet. Colour-blind-safe within each chart
+     (checked with the dataviz palette validator); red, green and amber stay for status only. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #6250d6;
   --chart-5: oklch(0.269 0 0);
   --radius: 0.5rem;
   /* Amber: low-stock and attention states only. */
@@ -108,10 +110,10 @@
   --border: #2a3e44;
   --input: #34494f;
   --ring: #5fa8b4;
-  --chart-1: #c7d4d7;
-  --chart-2: #6f8a90;
-  --chart-3: #567076;
-  --chart-4: #3f5459;
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #9085e9;
   --chart-5: #2b3c40;
   --warning: #f2b33d;
   /* Used as warning text on the page and cards, so light in dark mode. */
