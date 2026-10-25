@@ -151,7 +151,8 @@ export async function getTopSellers(
   limit = 10,
 ): Promise<TopSellerRow[]> {
   const dim = DIMENSIONS[dimension];
-  const orderBy = sort === "profit" ? "gross_profit" : "net_sales";
+  // Sort on the numeric columns: the output columns are text, where "9000.00" > "10000.00".
+  const orderBy = sort === "profit" ? "t.profit" : "t.net";
   const rows = await db.execute<{
     key: string;
     name: string;
@@ -161,12 +162,12 @@ export async function getTopSellers(
     gross_profit: string;
   }>(sql`
     with lines as (${saleLines(range)})
-    select key, name, detail, qty, net_sales::text, gross_profit::text
+    select key, name, detail, qty, t.net::text as net_sales, t.profit::text as gross_profit
     from (
       select ${sql.raw(dim.key)} as key, ${sql.raw(dim.name)} as name, ${sql.raw(dim.detail)} as detail,
              sum(l.qty)::int as qty,
-             sum(l.net)::numeric(12, 2) as net_sales,
-             (sum(l.net)::numeric(12, 2) - sum(l.cost)::numeric(12, 2)) as gross_profit
+             sum(l.net)::numeric(12, 2) as net,
+             (sum(l.net)::numeric(12, 2) - sum(l.cost)::numeric(12, 2)) as profit
       from lines l
       join parts p on p.id = l.part_id
       ${sql.raw(dim.join)}

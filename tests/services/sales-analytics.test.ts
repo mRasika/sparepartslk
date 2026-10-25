@@ -188,6 +188,16 @@ describe("sales analytics: top sellers", () => {
     expect(byProfit[0]).toMatchObject({ key: y.id, grossProfit: "900.00" });
   });
 
+  it("sorts amounts as numbers, not text", async () => {
+    const big = await makePart({ qty: 20 });
+    const small = await makePart({ qty: 20 });
+    await sell({ lines: [{ partId: big.id, qty: 10 }, { partId: small.id, qty: 9 }] });
+
+    // As text "9000.00" sorts above "10000.00".
+    expect((await getTopSellers(todayOnly, "parts", "sales")).map((r) => r.netSales)).toEqual(["10000.00", "9000.00"]);
+    expect((await getTopSellers(todayOnly, "parts", "profit")).map((r) => r.netSales)).toEqual(["10000.00", "9000.00"]);
+  });
+
   it("limits to 10 rows", async () => {
     const parts = await Promise.all(Array.from({ length: 11 }, () => makePart({ qty: 10 })));
     await sell({ lines: parts.map((p) => ({ partId: p.id, qty: 1 })) });
