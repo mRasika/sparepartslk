@@ -1,4 +1,7 @@
+import { Tags } from "lucide-react";
+import Link from "next/link";
 import { NoAccess } from "@/components/no-access";
+import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { requireUser } from "@/server/auth";
 import { getSettings } from "@/server/services/settings";
@@ -11,7 +14,15 @@ export default async function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" description="Business details printed on invoices, VAT, and rules for staff." />
+      <PageHeader
+        title="Settings"
+        description="Business details printed on invoices, VAT, and rules for staff."
+        actions={
+          <Link href="/settings/tiers" className={buttonVariants({ variant: "outline" })}>
+            <Tags /> Price tiers
+          </Link>
+        }
+      />
       <SettingsForm
         initial={{
           businessName: s.businessName,

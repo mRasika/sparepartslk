@@ -5,6 +5,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   text,
@@ -90,6 +91,37 @@ export const invoices = pgTable(
     index("invoices_customer_status_idx").on(t.customerId, t.status),
     index("invoices_invoice_date_idx").on(t.invoiceDate),
   ],
+);
+
+export type InvoiceDraftData = {
+  lines: { partId: string; qty: number; discount?: { type: "amount" | "percent"; value: string } }[];
+  invoiceDiscount?: { type: "amount" | "percent"; value: string };
+  cashPayment?: { method: "cash" | "bank" | "cheque"; reference?: string };
+};
+
+/**
+ * Unfinished invoices, auto-saved by the editor. A draft has no number and doesn't touch stock or
+ * balances; issuing the invoice deletes it. The id comes from the editor so saves can upsert.
+ */
+export const invoiceDrafts = pgTable(
+  "invoice_drafts",
+  {
+    id: uuid("id").primaryKey(),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    paymentType: paymentTypeEnum("payment_type").notNull(),
+    data: jsonb("data").$type<InvoiceDraftData>().notNull(),
+    lineCount: integer("line_count").notNull(),
+    /** Last previewed total, for the drafts list only; null while the draft has an error. */
+    total: money("total"),
+    updatedBy: uuid("updated_by")
+      .notNull()
+      .references(() => profiles.userId),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    ...audit(),
+  },
+  (t) => [index("invoice_drafts_updated_at_idx").on(t.updatedAt)],
 );
 
 export const invoiceItems = pgTable(

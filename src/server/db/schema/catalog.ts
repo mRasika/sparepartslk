@@ -21,6 +21,8 @@ export const parts = pgTable(
     oemPartNo: text("oem_part_no"),
     barcode: text("barcode").unique(),
     name: text("name").notNull(),
+    /** Other names, supplier and cross-reference numbers; searched like the name. */
+    keywords: text("keywords"),
     categoryId: uuid("category_id").references(() => categories.id),
     brandId: uuid("brand_id").references(() => brands.id),
     unit: text("unit").notNull().default("pcs"),

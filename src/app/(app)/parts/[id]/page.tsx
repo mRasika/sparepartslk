@@ -13,7 +13,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import { describeRule, rulePrice } from "@/lib/tier-rule";
+import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth";
+import { cachedPriceTiers } from "@/server/cached";
 import { NotFound } from "@/server/errors";
 import { getPart, type PartDetail } from "@/server/services/catalog";
 
@@ -36,6 +39,19 @@ export default async function PartPage({ params }: { params: Promise<{ id: strin
     throw e;
   }
   const low = part.reorderLevel > 0 && part.qtyOnHand <= part.reorderLevel;
+
+  // Every tier's price: typed on the part, else the tier's rule on the default price.
+  const tiers = await cachedPriceTiers();
+  const defaultTier = tiers.find((t) => t.isDefault);
+  const basePrice = part.prices.find((p) => p.tierId === defaultTier?.id)?.price;
+  const tierPrices = tiers.flatMap((t) => {
+    const typed = part.prices.find((p) => p.tierId === t.id)?.price;
+    const price = typed ?? (basePrice && !t.isDefault ? rulePrice(basePrice, t.discountPct, t.roundTo) : undefined);
+    if (!price) return [];
+    const rule = typed ? undefined : describeRule(defaultTier!.name, t.discountPct, t.roundTo);
+    const belowCost = part.avgCost !== undefined && Number(part.avgCost) > 0 && Number(price) < Number(part.avgCost);
+    return [{ tierId: t.id, tierName: t.name, price, rule, belowCost }];
+  });
 
   return (
     <div>
@@ -69,19 +85,28 @@ export default async function PartPage({ params }: { params: Promise<{ id: strin
         <Fact label="Barcode">{part.barcode || "None"}</Fact>
         <Fact label="Category">{part.categoryName || "None"}</Fact>
         <Fact label="Brand">{part.brandName || "None"}</Fact>
+        {part.keywords && <Fact label="Keywords">{part.keywords}</Fact>}
       </dl>
 
       <div className="mb-8 grid gap-8 lg:grid-cols-2">
         <section>
           <h2 className="mb-2 text-base font-semibold">Selling prices</h2>
-          {part.prices.length === 0 ? (
+          {tierPrices.length === 0 ? (
             <p className="text-sm text-muted-foreground">No prices set. This part can’t be invoiced yet.</p>
           ) : (
             <ul className="divide-y rounded-lg border bg-card">
-              {part.prices.map((p) => (
-                <li key={p.tierId} className="flex justify-between px-4 py-2 text-sm">
-                  <span>{p.tierName}</span>
-                  <span className="tabular-nums font-medium">Rs {formatMoney(p.price)}</span>
+              {tierPrices.map((p) => (
+                <li key={p.tierId} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                  <span>
+                    {p.tierName}
+                    {p.rule && <span className="ml-2 text-xs text-muted-foreground">{p.rule}</span>}
+                  </span>
+                  <span
+                    className={cn("tabular-nums font-medium", p.belowCost && "text-destructive")}
+                    title={p.belowCost ? "Below average cost" : undefined}
+                  >
+                    Rs {formatMoney(p.price)}
+                  </span>
                 </li>
               ))}
             </ul>

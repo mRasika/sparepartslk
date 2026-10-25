@@ -7,6 +7,7 @@ import { requireRole, type SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
 import {
   customers,
+  invoiceDrafts,
   invoiceItems,
   invoices,
   parts,
@@ -66,6 +67,8 @@ export const invoiceInputSchema = z.object({
       reference: z.string().trim().max(80).optional(),
     })
     .optional(),
+  /** The auto-saved draft this invoice was built in; issuing deletes it. */
+  draftId: z.uuid().optional(),
 });
 
 export type InvoiceInput = z.input<typeof invoiceInputSchema>;
@@ -208,6 +211,9 @@ export async function createInvoice(
         .returning({ id: payments.id });
       await tx.insert(paymentAllocations).values({ paymentId: payment.id, invoiceId: invoice.id, amount: totals.total });
     }
+
+    // 12. The draft is now a real invoice.
+    if (data.draftId) await tx.delete(invoiceDrafts).where(eq(invoiceDrafts.id, data.draftId));
 
     return { id: invoice.id, number };
   });

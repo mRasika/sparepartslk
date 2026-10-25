@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { LineItemsGrid, type GridLine } from "@/components/forms/line-items-grid";
+import type { PartFilterOptions } from "@/components/forms/part-picker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,7 +20,8 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import type { ActionError } from "@/lib/action-result";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { createInvoiceAction, previewInvoiceAction } from "@/server/actions/invoices";
+import { createInvoiceAction, discardInvoiceDraftAction, previewInvoiceAction } from "@/server/actions/invoices";
+import type { EditorDraft } from "@/server/services/invoice-drafts";
 import type { InvoiceInput } from "@/server/services/invoicing";
 import type { Totals } from "@/server/services/pricing";
 import { CustomerPicker, type PickedCustomer } from "./customer-picker";
@@ -36,13 +38,20 @@ const discountOrUndefined = (d: DiscountState) =>
   d.value.trim() === "" || Number(d.value) === 0 ? undefined : { type: d.type, value: d.value.trim() };
 const validDiscount = (d: DiscountState) => d.value.trim() === "" || AMOUNT.test(d.value.trim());
 
+const NO_DISCOUNT: DiscountState = { type: "percent", value: "" };
+
 export function InvoiceEditor({
   initialCustomer,
+  draft,
+  partFilters,
   isAdmin,
   vatRate,
   staffCapPct,
 }: {
   initialCustomer: PickedCustomer;
+  /** Reopened draft; its customer is `initialCustomer`. */
+  draft?: Omit<EditorDraft, "customer">;
+  partFilters: PartFilterOptions;
   isAdmin: boolean;
   vatRate: string;
   staffCapPct: string;
@@ -50,16 +59,31 @@ export function InvoiceEditor({
   const router = useRouter();
   const pickerRef = useRef<HTMLInputElement>(null);
   const [customer, setCustomer] = useState(initialCustomer);
-  const [paymentType, setPaymentType] = useState<"cash" | "credit">("cash");
-  const [method, setMethod] = useState<"cash" | "bank" | "cheque">("cash");
-  const [reference, setReference] = useState("");
-  const [lines, setLines] = useState<Line[]>([]);
-  const [invoiceDiscount, setInvoiceDiscount] = useState<DiscountState>({ type: "percent", value: "" });
+  const [paymentType, setPaymentType] = useState<"cash" | "credit">(draft?.paymentType ?? "cash");
+  const [method, setMethod] = useState<"cash" | "bank" | "cheque">(draft?.cashPayment?.method ?? "cash");
+  const [reference, setReference] = useState(draft?.cashPayment?.reference ?? "");
+  const [lines, setLines] = useState<Line[]>(
+    () =>
+      draft?.lines.map((l, i) => ({
+        key: `draft-${i}`,
+        part: l.part,
+        qty: String(l.qty),
+        discount: l.discount ?? NO_DISCOUNT,
+      })) ?? [],
+  );
+  const [invoiceDiscount, setInvoiceDiscount] = useState<DiscountState>(draft?.invoiceDiscount ?? NO_DISCOUNT);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<ActionError | null>(null);
   const [override, setOverride] = useState<{ mode: SaveMode; details: Record<string, string> } | null>(null);
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const [pending, startTransition] = useTransition();
   const previewId = useRef(0);
+  // The draft's id is made here so every auto-save upserts the same row; it's in the URL once saved.
+  const draftId = useRef<string | null>(draft?.id ?? null);
+  const draftSaved = useRef(Boolean(draft));
+  /** A change the server hasn't seen yet (or can't: half-typed lines). */
+  const dirty = useRef(false);
+  const saving = useRef(false);
 
   const linesValid = lines.every((l) => validQty(l.qty) && validDiscount(l.discount)) && validDiscount(invoiceDiscount);
 
@@ -71,22 +95,43 @@ export function InvoiceEditor({
       invoiceDiscount: discountOrUndefined(invoiceDiscount),
       overrideCreditLimit: overrideCreditLimit || undefined,
       cashPayment: paymentType === "cash" ? { method, reference: reference.trim() || undefined } : undefined,
+      draftId: draftId.current ?? undefined,
     }),
     [customer.id, paymentType, lines, invoiceDiscount, method, reference],
   );
 
   // Live prices and totals from the server, so the screen always matches what will be saved.
+  // The same request auto-saves the draft.
   useEffect(() => {
     if (lines.length === 0) {
       setPreview(null);
       setError(null);
+      dirty.current = false;
+      if (draftSaved.current && draftId.current) {
+        void discardInvoiceDraftAction(draftId.current);
+        window.history.replaceState(null, "", "/invoices/new");
+      }
+      draftSaved.current = false;
+      draftId.current = null;
+      setDraftSavedAt(null);
       return;
     }
+    dirty.current = true;
     if (!linesValid) return;
     const id = ++previewId.current;
+    draftId.current ??= crypto.randomUUID();
+    const thisDraft = draftId.current;
     const timer = setTimeout(async () => {
-      const result = await previewInvoiceAction(buildInput());
+      // A save already started would delete the draft; don't recreate it behind its back.
+      if (saving.current) return;
+      const result = await previewInvoiceAction(buildInput(), thisDraft);
+      if (!draftSaved.current && draftId.current === thisDraft) {
+        draftSaved.current = true;
+        window.history.replaceState(null, "", `/invoices/new?draft=${thisDraft}`);
+      }
       if (id !== previewId.current) return;
+      dirty.current = false;
+      setDraftSavedAt(new Date());
       if (result.ok) {
         setPreview(result.data);
         setError(null);
@@ -96,6 +141,15 @@ export function InvoiceEditor({
     }, 250);
     return () => clearTimeout(timer);
   }, [lines, linesValid, buildInput]);
+
+  // Closing the tab or reloading mid-change would lose what the last auto-save didn't catch.
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (dirty.current) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
 
   const qtyByPart = useMemo(() => {
     const m = new Map<string, number>();
@@ -122,8 +176,10 @@ export function InvoiceEditor({
   function save(mode: SaveMode, overrideCreditLimit = false) {
     if (lines.length === 0 || !linesValid) return;
     setError(null);
+    saving.current = true;
     startTransition(async () => {
       const result = await createInvoiceAction(buildInput(overrideCreditLimit));
+      saving.current = result.ok;
       if (!result.ok) {
         if (result.error.code === "CreditLimitExceeded" && isAdmin) {
           setOverride({ mode, details: result.error.details as Record<string, string> });
@@ -134,6 +190,7 @@ export function InvoiceEditor({
         return;
       }
       setOverride(null);
+      dirty.current = false;
       toast.success(`${result.data.number} saved`);
       const id = result.data.id;
       router.push(mode === "save" ? `/invoices/${id}` : `/print/invoice/${id}?format=${mode}&autoprint=1`);
@@ -154,9 +211,9 @@ export function InvoiceEditor({
           save("save");
         }
       }}
-      className="grid gap-6 xl:grid-cols-[1fr_22rem]"
+      className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"
     >
-      <div className="grid content-start gap-4">
+      <div className="grid min-w-0 content-start gap-4">
         <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
           <CustomerPicker value={customer} onChange={changeCustomer} />
           <fieldset className="grid content-start gap-1.5">
@@ -190,6 +247,7 @@ export function InvoiceEditor({
           onChange={setLines}
           pickerInputRef={pickerRef}
           pickerCustomerId={customer.id}
+          pickerFilters={partFilters}
           pickerMeta={(p) =>
             p.price ? (
               <div className="font-medium">Rs {formatMoney(p.price)}</div>
@@ -231,7 +289,7 @@ export function InvoiceEditor({
         )}
       </div>
 
-      <div className="grid content-start gap-4">
+      <div className="grid min-w-0 content-start gap-4">
         <TotalsPanel
           subtotal={preview?.subtotal}
           invoiceDiscountAmount={preview?.invoiceDiscount}
@@ -281,7 +339,17 @@ export function InvoiceEditor({
               <ReceiptText /> Save, receipt
             </Button>
           </div>
-          <p className="text-center text-xs text-muted-foreground">Ctrl + Enter saves</p>
+          <p className="text-center text-xs text-muted-foreground">
+            Ctrl + Enter saves
+            {draftSavedAt && (
+              <>
+                {" · "}
+                <span title="Find it under Unfinished invoices on New invoice">
+                  Draft kept {draftSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </>
+            )}
+          </p>
         </div>
       </div>
 

@@ -96,8 +96,17 @@ export const priceTiers = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull().unique(),
     isDefault: boolean("is_default").notNull().default(false),
+    /**
+     * Rule for parts with no typed price on this tier: the default tier's price less this percent
+     * (negative = above it). Ignored on the default tier.
+     */
+    discountPct: numeric("discount_pct", { precision: 5, scale: 2, mode: "string" }).notNull().default("0.00"),
+    /** Round rule prices to the nearest multiple of this many rupees; 0 keeps cents. */
+    roundTo: integer("round_to").notNull().default(0),
   },
   (t) => [
     uniqueIndex("price_tiers_one_default").on(t.isDefault).where(sql`${t.isDefault}`),
+    check("price_tiers_discount_pct_range", sql`${t.discountPct} > -100 and ${t.discountPct} < 100`),
+    check("price_tiers_round_to_non_negative", sql`${t.roundTo} >= 0`),
   ],
 );

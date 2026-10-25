@@ -29,6 +29,27 @@
       "when": 1792685375212,
       "tag": "0003_line_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792912142936,
+      "tag": "0004_invoice_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792912572123,
+      "tag": "0005_part_keywords",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792913017425,
+      "tag": "0006_tier_rules",
+      "breakpoints": true
     }
   ]
 }
