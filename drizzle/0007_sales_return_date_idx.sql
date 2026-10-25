@@ -1,0 +1,1 @@
+CREATE INDEX "sales_returns_return_date_idx" ON "sales_returns" USING btree ("return_date");

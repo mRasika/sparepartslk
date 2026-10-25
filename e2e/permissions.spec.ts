@@ -19,6 +19,12 @@ test.describe("staff permissions", () => {
     await expect(page.getByRole("button", { name: "Save settings" })).toHaveCount(0);
   });
 
+  test("hides sales & profit", async ({ page }) => {
+    await page.goto("/dashboard?period=year");
+    await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sales & profit" })).toHaveCount(0);
+  });
+
   test("never shows average cost on a part", async ({ page }) => {
     // The full-flow spec creates BRK-001 before this file runs (files run in name order).
     await page.goto("/parts?q=BRK-001");

@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { runAction } from "@/lib/action-result";
 import { requireUser } from "@/server/auth";
+import { refreshCatalogRefs } from "@/server/cached";
 import {
   createPart,
-  searchParts,
   updatePart,
   upsertBrand,
   upsertCategory,
@@ -32,17 +32,10 @@ export async function updatePartAction(id: string, input: PartInput) {
   });
 }
 
-/** Active parts only; used by pickers (billing, GRN, adjustments). */
-export async function searchPartsAction(q: string, opts: { vehicleModelId?: string; limit?: number } = {}) {
-  return runAction(async () => {
-    await requireUser();
-    return searchParts(q, { ...opts, activeOnly: true });
-  });
-}
-
 export async function upsertCategoryAction(input: { id?: string; name: string }) {
   return runAction(async () => {
     const result = await upsertCategory(await requireUser(), input);
+    refreshCatalogRefs();
     revalidatePath("/parts", "layout");
     return result;
   });
@@ -51,6 +44,7 @@ export async function upsertCategoryAction(input: { id?: string; name: string })
 export async function upsertBrandAction(input: { id?: string; name: string }) {
   return runAction(async () => {
     const result = await upsertBrand(await requireUser(), input);
+    refreshCatalogRefs();
     revalidatePath("/parts", "layout");
     return result;
   });
@@ -65,6 +59,7 @@ export async function upsertVehicleModelAction(input: {
 }) {
   return runAction(async () => {
     const result = await upsertVehicleModel(await requireUser(), input);
+    refreshCatalogRefs();
     revalidatePath("/parts", "layout");
     return result;
   });

@@ -2,22 +2,17 @@ import { emptyPartValues, PartForm } from "@/components/forms/part-form";
 import { NoAccess } from "@/components/no-access";
 import { PageHeader } from "@/components/page-header";
 import { requireUser } from "@/server/auth";
-import {
-  listBrands,
-  listCategories,
-  listPriceTiers,
-  listVehicleModels,
-} from "@/server/services/catalog";
+import { cachedBrands, cachedCategories, cachedPriceTiers, cachedVehicleModels } from "@/server/cached";
 
 export default async function NewPartPage() {
   const user = await requireUser();
   if (user.role !== "admin") return <NoAccess what="new parts" />;
 
   const [tiers, categories, brands, vehicleModels] = await Promise.all([
-    listPriceTiers(),
-    listCategories(),
-    listBrands(),
-    listVehicleModels(),
+    cachedPriceTiers(),
+    cachedCategories(),
+    cachedBrands(),
+    cachedVehicleModels(),
   ]);
 
   return (

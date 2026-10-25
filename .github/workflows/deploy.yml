@@ -1,0 +1,67 @@
+# Deploys to the Vercel account that hosts this project. That account has no GitHub
+# connection (GitHub is linked to a different Vercel account), so pushes don't reach it on
+# their own; CI uploads the source with a token and Vercel builds it. The build has to run
+# on Vercel because the env vars are marked Sensitive, and Vercel never hands those out.
+#   main        -> production (sparepartslk.vercel.app)
+#   development -> preview, aliased to a stable URL for testing
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main, development]
+  workflow_dispatch:
+
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERCEL_TEAM_SLUG: hobby-daa6
+  VERCEL_PROJECT_ID: prj_qQMSIB0qLmOFJ2JXDtse84LKfdND
+  DEV_ALIAS: sparepartslk-development.vercel.app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The CLI needs the team's ID; look it up from the slug (also fails fast if the token can't see the project).
+      - name: Resolve Vercel team ID
+        env:
+          VERCEL_TOKEN: ${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
+        run: |
+          org_id=$(curl -sSf -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?slug=$VERCEL_TEAM_SLUG" | jq -r .accountId)
+          echo "VERCEL_ORG_ID=$org_id" >> "$GITHUB_ENV"
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Deploy
+        id: deploy
+        run: |
+          prod_flag=""
+          if [ "$GITHUB_REF_NAME" = "main" ]; then prod_flag="--prod"; fi
+          url=$(vercel deploy $prod_flag --yes --token=${{ secrets.SECOND_VERCAL_DEPLOYMENT }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      # Calls the API directly: `vercel alias` looks up the token's user, which fails for a team-scoped token.
+      - name: Point the development URL at this deploy
+        if: github.ref_name == 'development'
+        env:
+          VERCEL_TOKEN: ${{ secrets.SECOND_VERCAL_DEPLOYMENT }}
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          api="https://api.vercel.com"
+          auth="Authorization: Bearer $VERCEL_TOKEN"
+          deployment_id=$(curl -sSf -H "$auth" "$api/v13/deployments/${DEPLOY_URL#https://}?slug=$VERCEL_TEAM_SLUG" | jq -r .id)
+          curl -sSf -X POST -H "$auth" -H "Content-Type: application/json" \
+            -d "{\"alias\":\"$DEV_ALIAS\"}" \
+            "$api/v2/deployments/$deployment_id/aliases?slug=$VERCEL_TEAM_SLUG" | jq -r '"Aliased \(.alias)"'
+          echo "Development site: https://$DEV_ALIAS" >> "$GITHUB_STEP_SUMMARY"

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { LineItemsGrid, type GridLine } from "@/components/forms/line-items-grid";
+import type { PartFilterOptions } from "@/components/forms/part-picker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,12 +19,10 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import type { ActionError } from "@/lib/action-result";
 import { formatMoney } from "@/lib/format";
+import { D, fmt } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import {
-  createInvoiceAction,
-  previewInvoiceAction,
-  searchPartsForCustomerAction,
-} from "@/server/actions/invoices";
+import { createInvoiceAction, discardInvoiceDraftAction, previewInvoiceAction } from "@/server/actions/invoices";
+import type { EditorDraft } from "@/server/services/invoice-drafts";
 import type { InvoiceInput } from "@/server/services/invoicing";
 import type { Totals } from "@/server/services/pricing";
 import { CustomerPicker, type PickedCustomer } from "./customer-picker";
@@ -40,13 +39,20 @@ const discountOrUndefined = (d: DiscountState) =>
   d.value.trim() === "" || Number(d.value) === 0 ? undefined : { type: d.type, value: d.value.trim() };
 const validDiscount = (d: DiscountState) => d.value.trim() === "" || AMOUNT.test(d.value.trim());
 
+const NO_DISCOUNT: DiscountState = { type: "percent", value: "" };
+
 export function InvoiceEditor({
   initialCustomer,
+  draft,
+  partFilters,
   isAdmin,
   vatRate,
   staffCapPct,
 }: {
   initialCustomer: PickedCustomer;
+  /** Reopened draft; its customer is `initialCustomer`. */
+  draft?: Omit<EditorDraft, "customer">;
+  partFilters: PartFilterOptions;
   isAdmin: boolean;
   vatRate: string;
   staffCapPct: string;
@@ -54,43 +60,80 @@ export function InvoiceEditor({
   const router = useRouter();
   const pickerRef = useRef<HTMLInputElement>(null);
   const [customer, setCustomer] = useState(initialCustomer);
-  const [paymentType, setPaymentType] = useState<"cash" | "credit">("cash");
-  const [method, setMethod] = useState<"cash" | "bank" | "cheque">("cash");
-  const [reference, setReference] = useState("");
-  const [lines, setLines] = useState<Line[]>([]);
-  const [invoiceDiscount, setInvoiceDiscount] = useState<DiscountState>({ type: "percent", value: "" });
+  // No default, even for a reopened draft: a preselected Cash let invoices be saved as paid when no
+  // money was taken. The cashier picks Cash or Credit, and for cash in hand types what was received.
+  const [paymentType, setPaymentType] = useState<"cash" | "credit" | null>(null);
+  const [method, setMethod] = useState<"cash" | "bank" | "cheque">(draft?.cashPayment?.method ?? "cash");
+  const [reference, setReference] = useState(draft?.cashPayment?.reference ?? "");
+  const [cashReceived, setCashReceived] = useState("");
+  const [lines, setLines] = useState<Line[]>(
+    () =>
+      draft?.lines.map((l, i) => ({
+        key: `draft-${i}`,
+        part: l.part,
+        qty: String(l.qty),
+        discount: l.discount ?? NO_DISCOUNT,
+      })) ?? [],
+  );
+  const [invoiceDiscount, setInvoiceDiscount] = useState<DiscountState>(draft?.invoiceDiscount ?? NO_DISCOUNT);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<ActionError | null>(null);
   const [override, setOverride] = useState<{ mode: SaveMode; details: Record<string, string> } | null>(null);
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const [pending, startTransition] = useTransition();
   const previewId = useRef(0);
+  // The draft's id is made here so every auto-save upserts the same row. It is deliberately not put
+  // in the URL: Next.js treats a changed ?draft= as a new page, refetches it from the server and
+  // remounts this editor from the saved draft, dropping lines added since. After a reload the draft
+  // is first under Unfinished invoices.
+  const draftId = useRef<string | null>(draft?.id ?? null);
+  const draftSaved = useRef(Boolean(draft));
+  /** A change the server hasn't seen yet (or can't: half-typed lines). */
+  const dirty = useRef(false);
+  const saving = useRef(false);
 
   const linesValid = lines.every((l) => validQty(l.qty) && validDiscount(l.discount)) && validDiscount(invoiceDiscount);
 
   const buildInput = useCallback(
     (overrideCreditLimit = false): InvoiceInput => ({
       customerId: customer.id,
-      paymentType,
+      // Previews and drafts don't depend on it; saving is blocked until one is chosen.
+      paymentType: paymentType ?? "cash",
       lines: lines.map((l) => ({ partId: l.part.id, qty: Number(l.qty), discount: discountOrUndefined(l.discount) })),
       invoiceDiscount: discountOrUndefined(invoiceDiscount),
       overrideCreditLimit: overrideCreditLimit || undefined,
       cashPayment: paymentType === "cash" ? { method, reference: reference.trim() || undefined } : undefined,
+      draftId: draftId.current ?? undefined,
     }),
     [customer.id, paymentType, lines, invoiceDiscount, method, reference],
   );
 
   // Live prices and totals from the server, so the screen always matches what will be saved.
+  // The same request auto-saves the draft.
   useEffect(() => {
     if (lines.length === 0) {
       setPreview(null);
       setError(null);
+      dirty.current = false;
+      if (draftSaved.current && draftId.current) void discardInvoiceDraftAction(draftId.current);
+      draftSaved.current = false;
+      draftId.current = null;
+      setDraftSavedAt(null);
       return;
     }
+    dirty.current = true;
     if (!linesValid) return;
     const id = ++previewId.current;
+    draftId.current ??= crypto.randomUUID();
+    const thisDraft = draftId.current;
     const timer = setTimeout(async () => {
-      const result = await previewInvoiceAction(buildInput());
+      // A save already started would delete the draft; don't recreate it behind its back.
+      if (saving.current) return;
+      const result = await previewInvoiceAction(buildInput(), thisDraft);
+      if (draftId.current === thisDraft) draftSaved.current = true;
       if (id !== previewId.current) return;
+      dirty.current = false;
+      setDraftSavedAt(new Date());
       if (result.ok) {
         setPreview(result.data);
         setError(null);
@@ -100,6 +143,15 @@ export function InvoiceEditor({
     }, 250);
     return () => clearTimeout(timer);
   }, [lines, linesValid, buildInput]);
+
+  // Closing the tab or reloading mid-change would lose what the last auto-save didn't catch.
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (dirty.current) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
 
   const qtyByPart = useMemo(() => {
     const m = new Map<string, number>();
@@ -119,15 +171,41 @@ export function InvoiceEditor({
 
   function changeCustomer(c: PickedCustomer) {
     setCustomer(c);
-    if (c.isWalkIn) setPaymentType("cash");
+    if (c.isWalkIn && paymentType === "credit") setPaymentType(null);
     pickerRef.current?.focus();
   }
 
+  // What still stops a save on the payment side, in the order the cashier fixes it.
+  const cashInHand = paymentType === "cash" && method === "cash";
+  const received = cashReceived.trim();
+  const change = cashInHand && AMOUNT.test(received) && preview ? D(received).minus(preview.total) : null;
+  const paymentProblem =
+    paymentType === null
+      ? "Choose Cash or Credit"
+      : cashInHand && !AMOUNT.test(received)
+        ? "Enter the cash received"
+        : cashInHand && !change
+          ? "Working out the total…"
+          : change?.isNegative()
+            ? `Cash received is Rs ${formatMoney(fmt(change.abs()))} short`
+            : paymentType === "cash" && method !== "cash" && !reference.trim()
+              ? method === "cheque"
+                ? "Enter the cheque number"
+                : "Enter the transfer reference"
+              : null;
+  const canSave = lines.length > 0 && linesValid && !paymentProblem;
+
   function save(mode: SaveMode, overrideCreditLimit = false) {
-    if (lines.length === 0 || !linesValid) return;
+    if (!canSave) {
+      // Ctrl + Enter bypasses the disabled buttons; say why nothing happened.
+      if (lines.length > 0 && linesValid && paymentProblem) toast.error(paymentProblem);
+      return;
+    }
     setError(null);
+    saving.current = true;
     startTransition(async () => {
       const result = await createInvoiceAction(buildInput(overrideCreditLimit));
+      saving.current = result.ok;
       if (!result.ok) {
         if (result.error.code === "CreditLimitExceeded" && isAdmin) {
           setOverride({ mode, details: result.error.details as Record<string, string> });
@@ -138,16 +216,12 @@ export function InvoiceEditor({
         return;
       }
       setOverride(null);
+      dirty.current = false;
       toast.success(`${result.data.number} saved`);
       const id = result.data.id;
       router.push(mode === "save" ? `/invoices/${id}` : `/print/invoice/${id}?format=${mode}&autoprint=1`);
     });
   }
-
-  const searchForCustomer = useCallback(
-    (q: string) => searchPartsForCustomerAction(q, customer.id),
-    [customer.id],
-  );
 
   const generalError = error && !(error.details as { partId?: string } | undefined)?.partId ? error : null;
 
@@ -163,14 +237,21 @@ export function InvoiceEditor({
           save("save");
         }
       }}
-      className="grid gap-6 xl:grid-cols-[1fr_22rem]"
+      className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"
     >
-      <div className="grid content-start gap-4">
+      <div className="grid min-w-0 content-start gap-4">
         <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
           <CustomerPicker value={customer} onChange={changeCustomer} />
           <fieldset className="grid content-start gap-1.5">
             <legend className="mb-1.5 text-sm font-medium">Payment</legend>
-            <div className="inline-flex rounded-lg border bg-card p-0.5" role="radiogroup">
+            <div
+              className={cn(
+                "inline-flex rounded-lg border bg-card p-0.5",
+                paymentType === null && lines.length > 0 && "border-warning ring-2 ring-warning/30",
+              )}
+              role="radiogroup"
+              aria-label="Payment"
+            >
               {(["cash", "credit"] as const).map((t) => {
                 const disabled = t === "credit" && customer.isWalkIn;
                 return (
@@ -180,7 +261,13 @@ export function InvoiceEditor({
                     role="radio"
                     aria-checked={paymentType === t}
                     disabled={disabled}
-                    onClick={() => setPaymentType(t)}
+                    onClick={() => {
+                      setPaymentType(t);
+                      // Straight to the amount: the next thing the cashier does is count the money.
+                      if (t === "cash" && method === "cash") {
+                        requestAnimationFrame(() => document.getElementById("cash-received")?.focus());
+                      }
+                    }}
                     className={cn(
                       "h-8 rounded-md px-4 text-sm font-medium transition-colors disabled:opacity-40",
                       paymentType === t ? "bg-primary text-primary-foreground" : "hover:bg-muted",
@@ -198,7 +285,8 @@ export function InvoiceEditor({
           lines={lines}
           onChange={setLines}
           pickerInputRef={pickerRef}
-          pickerSearch={searchForCustomer}
+          pickerCustomerId={customer.id}
+          pickerFilters={partFilters}
           pickerMeta={(p) =>
             p.price ? (
               <div className="font-medium">Rs {formatMoney(p.price)}</div>
@@ -240,7 +328,7 @@ export function InvoiceEditor({
         )}
       </div>
 
-      <div className="grid content-start gap-4">
+      <div className="grid min-w-0 content-start gap-4">
         <TotalsPanel
           subtotal={preview?.subtotal}
           invoiceDiscountAmount={preview?.invoiceDiscount}
@@ -261,13 +349,40 @@ export function InvoiceEditor({
               <NativeSelectOption value="bank">Bank transfer</NativeSelectOption>
               <NativeSelectOption value="cheque">Cheque</NativeSelectOption>
             </NativeSelect>
-            {method !== "cash" && (
+            {method !== "cash" ? (
               <Input
                 aria-label="Payment reference"
                 placeholder={method === "cheque" ? "Cheque number" : "Transfer reference"}
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
               />
+            ) : (
+              <>
+                <label htmlFor="cash-received" className="mt-1 text-sm font-medium">
+                  Cash received (Rs)
+                </label>
+                <Input
+                  id="cash-received"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder={preview ? formatMoney(preview.total) : ""}
+                  value={cashReceived}
+                  onChange={(e) => setCashReceived(e.target.value)}
+                  aria-invalid={change?.isNegative() || undefined}
+                  className="h-11 text-right text-lg font-semibold tabular-nums"
+                />
+                <div className="flex items-baseline justify-between text-sm" aria-live="polite">
+                  <span className="text-muted-foreground">Change</span>
+                  <span
+                    className={cn(
+                      "text-lg font-semibold tabular-nums",
+                      change?.isNegative() && "text-destructive",
+                    )}
+                  >
+                    {change && !change.isNegative() ? `Rs ${formatMoney(fmt(change))}` : "–"}
+                  </span>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -279,18 +394,33 @@ export function InvoiceEditor({
         )}
 
         <div className="grid gap-2">
-          <Button type="submit" size="lg" disabled={pending || lines.length === 0 || !linesValid} className="h-11">
+          {lines.length > 0 && linesValid && paymentProblem && (
+            <p className="text-center text-sm font-medium text-warning-foreground" role="status">
+              {paymentProblem}
+            </p>
+          )}
+          <Button type="submit" size="lg" disabled={pending || !canSave} className="h-11">
             <Save /> {pending ? "Saving…" : "Save invoice"}
           </Button>
           <div className="grid grid-cols-2 gap-2">
-            <Button type="button" variant="outline" disabled={pending || lines.length === 0 || !linesValid} onClick={() => save("a4")}>
+            <Button type="button" variant="outline" disabled={pending || !canSave} onClick={() => save("a4")}>
               <Printer /> Save, print A4
             </Button>
-            <Button type="button" variant="outline" disabled={pending || lines.length === 0 || !linesValid} onClick={() => save("thermal")}>
+            <Button type="button" variant="outline" disabled={pending || !canSave} onClick={() => save("thermal")}>
               <ReceiptText /> Save, receipt
             </Button>
           </div>
-          <p className="text-center text-xs text-muted-foreground">Ctrl + Enter saves</p>
+          <p className="text-center text-xs text-muted-foreground">
+            Ctrl + Enter saves
+            {draftSavedAt && (
+              <>
+                {" · "}
+                <span title="Find it under Unfinished invoices on New invoice">
+                  Draft kept {draftSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </>
+            )}
+          </p>
         </div>
       </div>
 

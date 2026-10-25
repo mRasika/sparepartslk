@@ -1,5 +1,6 @@
-import { AlertTriangle, Clock, FilePlus, PackageOpen } from "lucide-react";
+import { AlertTriangle, Clock, FilePen, FilePlus, PackageOpen } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { colomboDate } from "@/lib/dates";
@@ -7,11 +8,14 @@ import { D } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth";
 import { getDashboard } from "@/server/services/dashboard";
+import { countInvoiceDrafts } from "@/server/services/invoice-drafts";
 import { ResolveIssueButton } from "./resolve-issue-button";
+import { type SalesParams, SalesSection, SalesSectionSkeleton } from "./sales-section";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<SalesParams> }) {
   const user = await requireUser();
-  const d = await getDashboard(user);
+  const params = await searchParams;
+  const [d, draftCount] = await Promise.all([getDashboard(user), countInvoiceDrafts()]);
   const overdue = D(d.totalOverdue).greaterThan(0);
 
   return (
@@ -62,6 +66,22 @@ export default async function DashboardPage() {
         </section>
       )}
 
+      {draftCount > 0 && (
+        <Link
+          href="/invoices/new"
+          className="mb-6 flex items-center gap-3 rounded-lg border bg-card px-4 py-3 text-sm transition-colors hover:border-ring"
+        >
+          <FilePen className="size-4 text-muted-foreground" aria-hidden />
+          <span className="flex-1">
+            <span className="font-medium">
+              {draftCount} unfinished {draftCount === 1 ? "invoice" : "invoices"}
+            </span>{" "}
+            <span className="text-muted-foreground">waiting to be completed</span>
+          </span>
+          <span className="font-medium">Continue</span>
+        </Link>
+      )}
+
       <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Tile label="Sales today" value={`Rs ${formatMoney(d.todaySales)}`} note={`${d.todayInvoiceCount} ${d.todayInvoiceCount === 1 ? "invoice" : "invoices"}`} href="/invoices" />
         <Tile
@@ -85,6 +105,13 @@ export default async function DashboardPage() {
           status={d.lowStockCount > 0 ? { icon: AlertTriangle, tone: "warning" } : undefined}
         />
       </dl>
+
+      {user.role === "admin" && (
+        // Keyed by the query so changing the period re-suspends here, not the whole page.
+        <Suspense key={JSON.stringify(params)} fallback={<SalesSectionSkeleton />}>
+          <SalesSection user={user} params={params} />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -12,5 +12,6 @@ export async function login(page: Page, who: keyof typeof E2E_USERS) {
   await page.getByLabel("Email").fill(u.email);
   await page.getByLabel("Password").fill(u.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  // The dev server compiles the dashboard (and its chart library) on the first sign-in of a run.
+  await expect(page).toHaveURL(/\/dashboard$/, { timeout: 60_000 });
 }

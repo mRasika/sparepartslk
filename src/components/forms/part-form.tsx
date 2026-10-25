@@ -9,15 +9,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import type { ActionError } from "@/lib/action-result";
+import { formatMoney } from "@/lib/format";
+import { describeRule, rulePrice } from "@/lib/tier-rule";
 import { createPartAction, updatePartAction } from "@/server/actions/catalog";
 
 type Option = { id: string; name: string };
-type Tier = { id: string; name: string; isDefault: boolean };
+type Tier = { id: string; name: string; isDefault: boolean; discountPct: string; roundTo: number };
+
+const MONEY = /^\d{1,10}(\.\d{1,2})?$/;
 type VehicleModel = { id: string; label: string };
 
 export type PartFormValues = {
   sku: string;
   name: string;
+  keywords: string;
   oemPartNo: string;
   barcode: string;
   categoryId: string;
@@ -34,6 +39,7 @@ export type PartFormValues = {
 export const emptyPartValues: PartFormValues = {
   sku: "",
   name: "",
+  keywords: "",
   oemPartNo: "",
   barcode: "",
   categoryId: "",
@@ -54,10 +60,13 @@ export function PartForm({
   categories,
   brands,
   vehicleModels,
+  avgCost,
 }: {
   partId?: string;
   initial: PartFormValues;
   tiers: Tier[];
+  /** Admin-only: warns when a price is below it. */
+  avgCost?: string;
   categories: Option[];
   brands: Option[];
   vehicleModels: VehicleModel[];
@@ -77,6 +86,9 @@ export function PartForm({
   }, [fitmentFilter, vehicleModels]);
 
   const fieldError = (field: string) => (error?.field === field ? error.message : undefined);
+  const defaultTier = tiers.find((t) => t.isDefault);
+  const typedBase = defaultTier ? values.prices[defaultTier.id]?.trim() : undefined;
+  const basePrice = typedBase && MONEY.test(typedBase) ? typedBase : undefined;
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -133,6 +145,20 @@ export function PartForm({
         </div>
         <TextField label="Unit" id="unit" value={values.unit} onChange={(v) => set("unit", v)} />
         <TextField label="Bin location" id="binLocation" value={values.binLocation} onChange={(v) => set("binLocation", v)} />
+        <div className="grid gap-1.5 sm:col-span-2">
+          <TextField
+            label="Keywords"
+            id="keywords"
+            value={values.keywords}
+            onChange={(v) => set("keywords", v)}
+            error={fieldError("keywords")}
+            placeholder="e.g. pad set, brake liner, LMP-4471"
+            aria-describedby="keywords-hint"
+          />
+          <p id="keywords-hint" className="text-xs text-muted-foreground">
+            Other names customers use, supplier and cross-reference numbers. Search finds the part by any of these.
+          </p>
+        </div>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2">
@@ -150,23 +176,40 @@ export function PartForm({
         <div>
           <h2 className="text-base font-semibold">Selling prices</h2>
           <p className="text-sm text-muted-foreground">
-            Customers on a tier with no price here are charged the {tiers.find((t) => t.isDefault)?.name ?? "default"} price.
+            Leave a tier blank to use its rule, worked out from the {defaultTier?.name ?? "default"} price. Type a price to
+            override the rule for this part.
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
-          {tiers.map((t, i) => (
-            <TextField
-              key={t.id}
-              label={`${t.name} price (Rs)`}
-              id={`price-${t.id}`}
-              inputMode="decimal"
-              className="tabular-nums"
-              value={values.prices[t.id] ?? ""}
-              onChange={(v) => set("prices", { ...values.prices, [t.id]: v })}
-              error={fieldError(`prices.${i}.price`)}
-              required={t.isDefault}
-            />
-          ))}
+          {tiers.map((t, i) => {
+            const typed = values.prices[t.id]?.trim();
+            const ruled = !t.isDefault && !typed && basePrice ? rulePrice(basePrice, t.discountPct, t.roundTo) : undefined;
+            const shown = typed || ruled;
+            const belowCost = avgCost && Number(avgCost) > 0 && shown && MONEY.test(shown) && Number(shown) < Number(avgCost);
+            return (
+              <div key={t.id} className="grid content-start gap-1">
+                <TextField
+                  label={`${t.name} price (Rs)`}
+                  id={`price-${t.id}`}
+                  inputMode="decimal"
+                  className="tabular-nums"
+                  value={values.prices[t.id] ?? ""}
+                  onChange={(v) => set("prices", { ...values.prices, [t.id]: v })}
+                  error={fieldError(`prices.${i}.price`)}
+                  required={t.isDefault}
+                  placeholder={ruled ? `Auto ${formatMoney(ruled)}` : undefined}
+                />
+                {!t.isDefault && defaultTier && (
+                  <p className="text-xs text-muted-foreground">
+                    {typed ? "Typed price, rule not used" : `Rule: ${describeRule(defaultTier.name, t.discountPct, t.roundTo)}`}
+                  </p>
+                )}
+                {belowCost && (
+                  <p className="text-xs text-destructive">Below average cost (Rs {formatMoney(avgCost)})</p>
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
 

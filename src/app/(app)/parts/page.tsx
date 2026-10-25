@@ -1,4 +1,4 @@
-import { Plus, SlidersHorizontal } from "lucide-react";
+import { Percent, Plus, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -14,12 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { requireUser } from "@/server/auth";
-import {
-  listBrands,
-  listCategories,
-  listVehicleModels,
-  searchParts,
-} from "@/server/services/catalog";
+import { cachedBrands, cachedCategories, cachedVehicleModels } from "@/server/cached";
+import { searchParts } from "@/server/services/catalog";
 
 type SearchParams = Promise<{ q?: string; category?: string; brand?: string; vehicle?: string }>;
 
@@ -33,9 +29,9 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
       vehicleModelId: vehicle || undefined,
       limit: 200,
     }),
-    listCategories(),
-    listBrands(),
-    listVehicleModels(),
+    cachedCategories(),
+    cachedBrands(),
+    cachedVehicleModels(),
   ]);
   const filtered = Boolean(q || category || brand || vehicle);
 
@@ -49,6 +45,9 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
             <>
               <Link href="/parts/settings" className={buttonVariants({ variant: "outline" })}>
                 <SlidersHorizontal /> Categories, brands, models
+              </Link>
+              <Link href="/parts/prices" className={buttonVariants({ variant: "outline" })}>
+                <Percent /> Change prices
               </Link>
               <Link href="/parts/new" className={buttonVariants()}>
                 <Plus /> New part

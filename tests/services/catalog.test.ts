@@ -87,6 +87,27 @@ describe("catalog", () => {
     expect(rows.map((r) => r.sku)).toEqual(["FIT-1"]);
   });
 
+  it("finds a part by one of its keywords (other names, supplier numbers)", async () => {
+    await makePart({ sku: "PAD-1", name: "Disc Brake Pad Front", keywords: "pad set, LMP-4471" });
+    await makePart({ sku: "CHN-1", name: "Chain Kit" });
+    expect((await searchParts("lmp-4471")).map((r) => r.sku)).toEqual(["PAD-1"]);
+    expect((await searchParts("pad set")).map((r) => r.sku)).toEqual(["PAD-1"]);
+  });
+
+  it("saves and returns keywords on a part", async () => {
+    const { id } = await createPart(admin, await partInput({ keywords: "  shoe, brake liner  " }));
+    expect((await getPart(admin, id)).keywords).toBe("shoe, brake liner");
+  });
+
+  it("browses a category with an empty query", async () => {
+    const brakes = await upsertCategory(admin, { name: "Brakes" });
+    await makePart({ sku: "B-2", categoryId: brakes.id });
+    await makePart({ sku: "B-1", categoryId: brakes.id });
+    await makePart({ sku: "E-1" });
+    const rows = await searchParts("", { categoryId: brakes.id });
+    expect(rows.map((r) => r.sku)).toEqual(["B-1", "B-2"]);
+  });
+
   it("treats % and _ in the query literally", async () => {
     await makePart({ sku: "BRK-001", name: "Brake Shoe Pulsar 150" });
     await makePart({ sku: "CHN_1", name: "Chain Kit" });

@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui/command";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { searchCustomersAction } from "@/server/actions/customers";
 import type { CustomerRow } from "@/server/services/customers";
 
 export type PickedCustomer = Pick<
@@ -23,18 +22,33 @@ export function CustomerPicker({
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PickedCustomer[]>([]);
+  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
-  const requestId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const id = ++requestId.current;
+    const controller = new AbortController();
+    setLoading(true);
     const timer = setTimeout(async () => {
-      const r = await searchCustomersAction(query);
-      if (id === requestId.current) setResults(r.ok ? r.data : []);
-    }, 200);
-    return () => clearTimeout(timer);
+      try {
+        const res = await fetch(`/api/customers/search?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal,
+        });
+        setResults(res.ok ? await res.json() : []);
+        setLoading(false);
+      } catch {
+        // Aborted by a newer keystroke (which owns loading now) or a network failure.
+        if (!controller.signal.aborted) {
+          setResults([]);
+          setLoading(false);
+        }
+      }
+    }, 150);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [query, open]);
 
   return (
@@ -67,7 +81,12 @@ export function CustomerPicker({
             !open && "hidden",
           )}
         >
-          <CommandEmpty>No active customer matches.</CommandEmpty>
+          {/* The search is a server round trip; don't claim "no match" before it answers. */}
+          {loading && results.length === 0 ? (
+            <div className="py-6 text-center text-sm text-muted-foreground">Searching…</div>
+          ) : (
+            !loading && <CommandEmpty>No active customer matches.</CommandEmpty>
+          )}
           {results.map((c) => (
             <CommandItem
               key={c.id}

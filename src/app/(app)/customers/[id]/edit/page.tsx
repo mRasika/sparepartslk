@@ -3,7 +3,7 @@ import { CustomerForm } from "@/components/forms/customer-form";
 import { PageHeader } from "@/components/page-header";
 import { requireUser } from "@/server/auth";
 import { NotFound } from "@/server/errors";
-import { listPriceTiers } from "@/server/services/catalog";
+import { cachedPriceTiers } from "@/server/cached";
 import { getCustomer, type CustomerRow } from "@/server/services/customers";
 
 export default async function EditCustomerPage({ params }: { params: Promise<{ id: string }> }) {
@@ -16,7 +16,7 @@ export default async function EditCustomerPage({ params }: { params: Promise<{ i
     if (e instanceof NotFound) notFound();
     throw e;
   }
-  const tiers = await listPriceTiers();
+  const tiers = await cachedPriceTiers();
 
   return (
     <div>

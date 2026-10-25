@@ -2,13 +2,8 @@ import { PartForm } from "@/components/forms/part-form";
 import { NoAccess } from "@/components/no-access";
 import { PageHeader } from "@/components/page-header";
 import { requireUser } from "@/server/auth";
-import {
-  getPart,
-  listBrands,
-  listCategories,
-  listPriceTiers,
-  listVehicleModels,
-} from "@/server/services/catalog";
+import { cachedBrands, cachedCategories, cachedPriceTiers, cachedVehicleModels } from "@/server/cached";
+import { getPart } from "@/server/services/catalog";
 
 export default async function EditPartPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
@@ -17,10 +12,10 @@ export default async function EditPartPage({ params }: { params: Promise<{ id: s
 
   const [part, tiers, categories, brands, vehicleModels] = await Promise.all([
     getPart(user, id),
-    listPriceTiers(),
-    listCategories(),
-    listBrands(),
-    listVehicleModels(),
+    cachedPriceTiers(),
+    cachedCategories(),
+    cachedBrands(),
+    cachedVehicleModels(),
   ]);
 
   return (
@@ -31,6 +26,7 @@ export default async function EditPartPage({ params }: { params: Promise<{ id: s
         initial={{
           sku: part.sku,
           name: part.name,
+          keywords: part.keywords ?? "",
           oemPartNo: part.oemPartNo ?? "",
           barcode: part.barcode ?? "",
           categoryId: part.categoryId ?? "",
@@ -44,6 +40,7 @@ export default async function EditPartPage({ params }: { params: Promise<{ id: s
           fitmentIds: part.fitments.map((f) => f.vehicleModelId),
         }}
         tiers={tiers}
+        avgCost={part.avgCost}
         categories={categories}
         brands={brands}
         vehicleModels={vehicleModels}

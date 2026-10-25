@@ -1,6 +1,7 @@
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type Decimal from "decimal.js";
 import { D, fmt, round2, sum } from "@/lib/money";
+import { rulePrice } from "@/lib/tier-rule";
 import type { SessionUser } from "@/server/auth";
 import type { Executor } from "@/server/db/client";
 import { partPrices, parts, priceTiers } from "@/server/db/schema";
@@ -19,8 +20,19 @@ export type Totals = {
 };
 
 /**
- * Unit price per part for a tier: the tier's own price, else the default tier's price.
- * Parts with neither are left out of the map.
+ * SQL twin of `rulePrice` (lib/tier-rule.ts): `base` less `pct` percent, rounded half-up to the
+ * nearest `roundTo` rupees (0 keeps cents). Postgres rounds numerics half away from zero, which is
+ * half-up for prices.
+ */
+export function ruleSql(base: SQL, pct: SQL, roundTo: SQL): SQL {
+  const raw = sql`(${base} * (100 - ${pct}) / 100)`;
+  return sql`(case when ${roundTo} > 0 then round(${raw} / ${roundTo}) * ${roundTo} else round(${raw}, 2) end)::numeric(12, 2)`;
+}
+
+/**
+ * Unit price per part for a tier: the tier's own typed price, else the tier's rule applied to the
+ * default tier's price (the default tier itself has no rule). Parts with neither price are left
+ * out of the map.
  */
 export async function lookupPrices(
   tx: Executor,
@@ -30,7 +42,17 @@ export async function lookupPrices(
   const ids = [...new Set(partIds)];
   if (ids.length === 0) return new Map();
 
-  const [defaultTier] = await tx.select({ id: priceTiers.id }).from(priceTiers).where(eq(priceTiers.isDefault, true));
+  const tierRows = await tx
+    .select({
+      id: priceTiers.id,
+      isDefault: priceTiers.isDefault,
+      discountPct: priceTiers.discountPct,
+      roundTo: priceTiers.roundTo,
+    })
+    .from(priceTiers)
+    .where(or(eq(priceTiers.id, tierId), eq(priceTiers.isDefault, true)));
+  const defaultTier = tierRows.find((t) => t.isDefault);
+  const tier = tierRows.find((t) => t.id === tierId);
   const rows = await tx
     .select({ partId: partPrices.partId, tierId: partPrices.tierId, price: partPrices.price })
     .from(partPrices)
@@ -44,9 +66,11 @@ export async function lookupPrices(
   const result = new Map<string, string>();
   for (const id of ids) {
     const own = rows.find((r) => r.partId === id && r.tierId === tierId);
-    const fallback = rows.find((r) => r.partId === id && r.tierId === defaultTier?.id);
-    const price = own?.price ?? fallback?.price;
-    if (price !== undefined) result.set(id, price);
+    const base = rows.find((r) => r.partId === id && r.tierId === defaultTier?.id);
+    if (own) result.set(id, own.price);
+    else if (base) {
+      result.set(id, tier && !tier.isDefault ? rulePrice(base.price, tier.discountPct, tier.roundTo) : base.price);
+    }
   }
   return result;
 }

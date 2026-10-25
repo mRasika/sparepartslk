@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { runAction } from "@/lib/action-result";
 import { requireRole, requireUser } from "@/server/auth";
+import { refreshSettings } from "@/server/cached";
 import { DomainError } from "@/server/errors";
 import { updateSettings, type SettingsInput } from "@/server/services/settings";
 import { createSupabaseAdminClient } from "@/server/supabase";
@@ -10,6 +11,7 @@ import { createSupabaseAdminClient } from "@/server/supabase";
 export async function updateSettingsAction(input: SettingsInput) {
   return runAction(async () => {
     await updateSettings(await requireUser(), input);
+    refreshSettings();
     revalidatePath("/", "layout");
     return { ok: true };
   });

@@ -7,7 +7,8 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      // inline-size containment: the page sizes the table box, never the table; wide tables scroll inside.
+      className="relative w-full overflow-x-auto [contain:inline-size]"
     >
       <table
         data-slot="table"
