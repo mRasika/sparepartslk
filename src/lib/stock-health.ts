@@ -129,7 +129,8 @@ export function summarizeStock(input: {
       return { ...b, value: fmt(sum(inBand.map((r) => r.value))), parts: inBand.length };
     }),
     classes: ABC_CLASSES.map((c) => {
-      const inClass = rows.filter((r) => r.cls === c.key);
+      // A discontinued part with no stock and no sales is gone, not a "No sales" part to act on.
+      const inClass = rows.filter((r) => r.cls === c.key && !(c.key === "none" && !r.p.isActive && !r.inStock));
       const classSales = sum(inClass.map((r) => salesOf.get(r.p.partId) ?? D(0)).filter((s) => s.greaterThan(0)));
       return {
         ...c,

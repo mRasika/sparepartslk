@@ -31,15 +31,16 @@ export default async function StockPage({ searchParams }: { searchParams: Search
   // Health filters are admin-only; for staff the params are ignored.
   const age: StockAgeBand | null = isAdmin && isStockAgeBand(params.age) ? params.age : null;
   const cls: AbcClass | null = isAdmin && !age && isAbcClass(params.class) ? params.class : null;
-  const [allRows, categories, health] = await Promise.all([
-    stockList(user, { q, categoryId: category || undefined, lowOnly: low === "1" }),
-    listCategories(),
-    isAdmin ? getStockHealth(user) : null,
-  ]);
+  const [categories, health] = await Promise.all([listCategories(), isAdmin ? getStockHealth(user) : null]);
+  // A band or class narrows the list in SQL (by part id), so the list's row limit comes after it.
+  const partIds =
+    health && (age || cls)
+      ? Object.entries(health.byPart)
+          .filter(([, h]) => (age ? h.band === age : h.cls === cls))
+          .map(([id]) => id)
+      : undefined;
+  const rows = await stockList(user, { q, categoryId: category || undefined, lowOnly: low === "1", partIds });
   const partHealth = (id: string) => health?.byPart[id] ?? { lastSoldOn: null, band: null, cls: "none" as const };
-  const rows = allRows.filter(
-    (r) => (!age || partHealth(r.id).band === age) && (!cls || partHealth(r.id).cls === cls),
-  );
   /** /stock keeping the search, category and low filters; one health filter at a time. */
   const hrefFor = (f: { age?: StockAgeBand; cls?: AbcClass }) => {
     const p = new URLSearchParams();

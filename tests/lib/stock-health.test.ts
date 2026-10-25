@@ -123,6 +123,25 @@ describe("summarizeStock", () => {
     expect(h).toMatchObject({ turnsPerYear: "0.0", daysOfStock: null });
   });
 
+  it("keeps a discontinued, sold-out part in the classes, and doesn't count dead ones", () => {
+    const h = summarizeStock({
+      today: T,
+      parts: [
+        part({ partId: "P1", qtyOnHand: 1, avgCost: "100.00", lastSoldOn: addDays(T, -3) }),
+        part({ partId: "P9", qtyOnHand: 0, avgCost: "100.00", isActive: false, lastSoldOn: addDays(T, -20) }),
+        part({ partId: "P8", qtyOnHand: 0, avgCost: "100.00", isActive: false }),
+      ],
+      sales12: [
+        { partId: "P1", sales: "600.00" },
+        { partId: "P9", sales: "400.00" },
+      ],
+      cogs90: "0.00",
+    });
+    expect(h.classes.find((c) => c.key === "A")).toMatchObject({ parts: 2, salesPct: 100 });
+    expect(h.classes.find((c) => c.key === "none")).toMatchObject({ parts: 0 });
+    expect(h.byPart.P9).toEqual({ lastSoldOn: addDays(T, -20), band: null, cls: "A" });
+  });
+
   it("summarizes an empty shop", () => {
     const h = summarizeStock({ today: T, parts: [], sales12: [], cogs90: "0.00" });
     expect(h).toMatchObject({ stockValue: "0.00", slowPct: 0, turnsPerYear: null, daysOfStock: null, stuck: [] });

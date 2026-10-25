@@ -30,7 +30,6 @@ export async function getStockHealth(user: SessionUser, today: string = colomboD
              (select min((m.created_at at time zone 'Asia/Colombo')::date)::text from stock_movements m
                where m.part_id = p.id and m.qty_change > 0) as first_arrival
       from parts p
-      where p.is_active or p.qty_on_hand > 0
     `),
     salesByPart({ from: addDays(today, -364), to: today }),
     getSalesTotals({ from: addDays(today, -89), to: today }),

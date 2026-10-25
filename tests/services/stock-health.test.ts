@@ -4,7 +4,7 @@ import { addDays, colomboDate } from "@/lib/dates";
 import { D, fmt, sum } from "@/lib/money";
 import type { SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
-import { invoiceItems } from "@/server/db/schema";
+import { invoiceItems, parts } from "@/server/db/schema";
 import { Forbidden } from "@/server/errors";
 import { stockList } from "@/server/services/inventory";
 import { cancelInvoice, createInvoice } from "@/server/services/invoicing";
@@ -71,6 +71,22 @@ describe("getStockHealth", () => {
 
     const listed = fmt(sum((await stockList(admin, {})).map((r) => D(r.stockValue ?? "0"))));
     expect((await getStockHealth(admin)).stockValue).toBe(listed);
+  });
+
+  it("knows when a discontinued, sold-out part last sold", async () => {
+    const part = await makePart({ qty: 2, avgCost: "600.00" });
+    await sell(part.id, 2, addDays(today, -15));
+    await db.update(parts).set({ isActive: false }).where(eq(parts.id, part.id));
+
+    const h = await getStockHealth(admin);
+    expect(h.byPart[part.id]).toMatchObject({ lastSoldOn: addDays(today, -15), cls: "A" });
+  });
+
+  it("lets the stock list filter by part ids, before its row limit", async () => {
+    const a = await makePart({ qty: 1 });
+    await makePart({ qty: 1 });
+    expect((await stockList(admin, { partIds: [a.id] })).map((r) => r.id)).toEqual([a.id]);
+    expect(await stockList(admin, { partIds: [] })).toEqual([]);
   });
 
   it("refuses staff", async () => {
