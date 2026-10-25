@@ -62,9 +62,12 @@ export async function SalesSection({ user, params }: { user: SessionUser; params
   if (sort !== "sales") keep.sort = sort;
   const compareLabel = formatRange(period.compare, today);
   const periodParams: SalesParams = period.preset === "custom" ? { ...period.range } : { period: period.preset };
+  const preset = PERIOD_PRESETS.find((p) => p.value === period.preset);
+  const periodLabel = `${preset ? `${preset.label.toLowerCase()}, ` : ""}${formatRange(period.range, today)}`;
 
   return (
     <SectionFrame
+      periodLabel={periodLabel}
       picker={
         <PeriodPicker
           presets={PERIOD_PRESETS.map((p) => ({
@@ -96,12 +99,22 @@ export async function SalesSection({ user, params }: { user: SessionUser; params
   );
 }
 
-function SectionFrame({ picker, children }: { picker?: React.ReactNode; children: React.ReactNode }) {
+/** Set apart from the "now" part above by a rule, with the period named in its heading. */
+function SectionFrame({
+  periodLabel,
+  picker,
+  children,
+}: {
+  periodLabel?: string;
+  picker?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <section aria-labelledby="sales-heading" className="mt-10">
+    <section aria-labelledby="sales-heading" className="mt-2 border-t pt-6">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 id="sales-heading" className="text-lg font-semibold tracking-tight">
           Sales &amp; profit
+          {periodLabel && <span className="text-base font-normal text-muted-foreground"> · {periodLabel}</span>}
         </h2>
         {picker}
       </div>
@@ -205,7 +218,7 @@ function CashCredit({ totals }: { totals: SalesTotals }) {
 
 export function SalesSectionSkeleton() {
   return (
-    <section aria-label="Loading sales" className="mt-10 animate-pulse">
+    <section aria-label="Loading sales" className="mt-2 animate-pulse border-t pt-6">
       <div className="mb-4 h-7 w-40 rounded-md bg-muted" />
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => (

@@ -76,7 +76,7 @@ export function SalesTrendChart({ points, bucket }: { points: TrendPoint[]; buck
               strokeWidth={2}
               dot={false}
               activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--card)" }}
-              type="monotone"
+              type="linear"
             />
           </ComposedChart>
         </ChartContainer>
