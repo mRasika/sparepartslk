@@ -23,6 +23,7 @@ export function CustomerPicker({
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PickedCustomer[]>([]);
+  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const requestId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,9 +31,12 @@ export function CustomerPicker({
   useEffect(() => {
     if (!open) return;
     const id = ++requestId.current;
+    setLoading(true);
     const timer = setTimeout(async () => {
-      const r = await searchCustomersAction(query);
-      if (id === requestId.current) setResults(r.ok ? r.data : []);
+      const r = await searchCustomersAction(query).catch(() => null);
+      if (id !== requestId.current) return;
+      setResults(r?.ok ? r.data : []);
+      setLoading(false);
     }, 200);
     return () => clearTimeout(timer);
   }, [query, open]);
@@ -67,7 +71,12 @@ export function CustomerPicker({
             !open && "hidden",
           )}
         >
-          <CommandEmpty>No active customer matches.</CommandEmpty>
+          {/* The search is a server round trip; don't claim "no match" before it answers. */}
+          {loading && results.length === 0 ? (
+            <div className="py-6 text-center text-sm text-muted-foreground">Searching…</div>
+          ) : (
+            !loading && <CommandEmpty>No active customer matches.</CommandEmpty>
+          )}
           {results.map((c) => (
             <CommandItem
               key={c.id}
