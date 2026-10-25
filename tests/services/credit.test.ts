@@ -63,6 +63,16 @@ describe("getCreditSummary", () => {
     expect(s.unappliedCredit).toBe("500.00");
   });
 
+  it("lists a customer whose unmatched payment nets their balance to zero", async () => {
+    const v = await makeCustomer({ name: "V", creditLimit: "5000.00" });
+    await creditSale(v.id, 1);
+    await receivePayment(admin, { customerId: v.id, amount: "1000.00", method: "cash", allocations: [] });
+
+    const s = await getCreditSummary();
+    expect(s.customers.find((c) => c.name === "V")).toMatchObject({ owed: "1000.00", limitUsedPct: 20, lastPaidOn: today });
+    expect(s.unappliedCredit).toBe("1000.00");
+  });
+
   it("computes DSO from 90 days of credit sales", async () => {
     const y = await makeCustomer({ name: "Y", creditLimit: "100000.00" });
     await creditSale(y.id, 2);
