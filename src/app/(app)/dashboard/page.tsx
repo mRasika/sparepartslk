@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock, FilePlus, PackageOpen } from "lucide-react";
+import { AlertTriangle, Clock, FilePen, FilePlus, PackageOpen } from "lucide-react";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
@@ -7,11 +7,12 @@ import { D } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth";
 import { getDashboard } from "@/server/services/dashboard";
+import { countInvoiceDrafts } from "@/server/services/invoice-drafts";
 import { ResolveIssueButton } from "./resolve-issue-button";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const d = await getDashboard(user);
+  const [d, draftCount] = await Promise.all([getDashboard(user), countInvoiceDrafts()]);
   const overdue = D(d.totalOverdue).greaterThan(0);
 
   return (
@@ -60,6 +61,22 @@ export default async function DashboardPage() {
             ))}
           </ul>
         </section>
+      )}
+
+      {draftCount > 0 && (
+        <Link
+          href="/invoices/new"
+          className="mb-6 flex items-center gap-3 rounded-lg border bg-card px-4 py-3 text-sm transition-colors hover:border-ring"
+        >
+          <FilePen className="size-4 text-muted-foreground" aria-hidden />
+          <span className="flex-1">
+            <span className="font-medium">
+              {draftCount} unfinished {draftCount === 1 ? "invoice" : "invoices"}
+            </span>{" "}
+            <span className="text-muted-foreground">waiting to be completed</span>
+          </span>
+          <span className="font-medium">Continue</span>
+        </Link>
       )}
 
       <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

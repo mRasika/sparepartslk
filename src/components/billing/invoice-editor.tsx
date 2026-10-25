@@ -211,9 +211,9 @@ export function InvoiceEditor({
           save("save");
         }
       }}
-      className="grid gap-6 xl:grid-cols-[1fr_22rem]"
+      className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"
     >
-      <div className="grid content-start gap-4">
+      <div className="grid min-w-0 content-start gap-4">
         <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
           <CustomerPicker value={customer} onChange={changeCustomer} />
           <fieldset className="grid content-start gap-1.5">
@@ -289,7 +289,7 @@ export function InvoiceEditor({
         )}
       </div>
 
-      <div className="grid content-start gap-4">
+      <div className="grid min-w-0 content-start gap-4">
         <TotalsPanel
           subtotal={preview?.subtotal}
           invoiceDiscountAmount={preview?.invoiceDiscount}

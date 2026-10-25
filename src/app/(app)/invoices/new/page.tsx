@@ -2,12 +2,11 @@ import { eq } from "drizzle-orm";
 import { InvoiceEditor } from "@/components/billing/invoice-editor";
 import { PageHeader } from "@/components/page-header";
 import { requireUser } from "@/server/auth";
-import { partFilterOptions } from "@/server/cached";
+import { cachedSettings, partFilterOptions } from "@/server/cached";
 import { db } from "@/server/db/client";
 import { customers } from "@/server/db/schema";
 import { getCustomer, type CustomerRow } from "@/server/services/customers";
 import { getInvoiceDraftForEditor, listInvoiceDrafts } from "@/server/services/invoice-drafts";
-import { getSettings } from "@/server/services/settings";
 import { DraftList } from "./draft-list";
 
 export default async function NewInvoicePage({
@@ -18,7 +17,7 @@ export default async function NewInvoicePage({
   const user = await requireUser();
   const { customerId, draft: draftId } = await searchParams;
   const [settings, draft, drafts, filters] = await Promise.all([
-    getSettings(),
+    cachedSettings(),
     draftId ? getInvoiceDraftForEditor(draftId) : null,
     listInvoiceDrafts({ excludeId: draftId }),
     partFilterOptions(),

@@ -27,7 +27,7 @@ export type PartFilterOptions = {
 export function PartPicker({
   onPick,
   meta,
-  placeholder = "Find a part: SKU, OEM no, barcode, name or keyword",
+  placeholder = "Find a part: SKU, OEM, barcode, name",
   autoFocus,
   inputRef,
   customerId,
