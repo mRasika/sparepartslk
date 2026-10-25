@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "@/components/ui/sonner";
 
 const plex = IBM_Plex_Sans({
   variable: "--font-plex",
@@ -20,10 +19,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={plex.variable}>
+    // next-themes sets the theme class on <html> before React hydrates.
+    <html lang="en" className={plex.variable} suppressHydrationWarning>
       <body className="antialiased">
         {children}
-        <Toaster richColors />
       </body>
     </html>
   );

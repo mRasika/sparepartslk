@@ -21,6 +21,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { logoutAction } from "@/app/(auth)/login/actions";
+import { ThemeMenu } from "@/components/theme/theme-menu";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/server/auth";
 
@@ -153,16 +154,19 @@ function UserBlock({ fullName, role }: { fullName: string; role: Role }) {
         <p className="truncate text-sm font-medium text-white">{fullName}</p>
         <p className="text-xs text-sidebar-foreground/70">{role === "admin" ? "Admin" : "Staff"}</p>
       </div>
-      <form action={logoutAction}>
-        <button
-          type="submit"
-          className="rounded-md p-2 text-sidebar-foreground hover:bg-sidebar-accent hover:text-white focus-visible:outline-2 focus-visible:outline-sidebar-ring"
-          aria-label="Sign out"
-          title="Sign out"
-        >
-          <LogOut className="size-4" />
-        </button>
-      </form>
+      <div className="flex items-center">
+        <ThemeMenu />
+        <form action={logoutAction}>
+          <button
+            type="submit"
+            className="rounded-md p-2 text-sidebar-foreground hover:bg-sidebar-accent hover:text-white focus-visible:outline-2 focus-visible:outline-sidebar-ring"
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut className="size-4" />
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
