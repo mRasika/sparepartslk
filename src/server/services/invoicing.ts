@@ -210,6 +210,9 @@ export async function createInvoice(
         })
         .returning({ id: payments.id });
       await tx.insert(paymentAllocations).values({ paymentId: payment.id, invoiceId: invoice.id, amount: totals.total });
+    } else if (data.paymentType === "credit") {
+      // Money the customer already paid beyond what was open goes onto this invoice first.
+      await tx.execute(sql`select public.apply_held_credit(${customer.id})`);
     }
 
     // 12. The draft is now a real invoice.
@@ -249,6 +252,8 @@ export async function cancelInvoice(user: SessionUser, invoiceId: string, reason
           eq(paymentAllocations.invoiceId, invoiceId),
           eq(payments.status, "active"),
           sql`(${payments.invoiceId} is null or ${payments.invoiceId} <> ${invoiceId})`,
+          // Held credit put on it can go back to the account; a payment made for it can't.
+          eq(paymentAllocations.fromCredit, false),
         ),
       );
     if (foreign.n > 0) {
@@ -279,6 +284,10 @@ export async function cancelInvoice(user: SessionUser, invoiceId: string, reason
       .update(invoices)
       .set({ status: "cancelled", cancelReason: why, cancelledBy: user.id, cancelledAt: new Date() })
       .where(eq(invoices.id, invoiceId));
+
+    // Credit that paid this invoice is free again (allocations to a cancelled invoice don't count):
+    // put it on the customer's other open invoices.
+    await tx.execute(sql`select public.apply_held_credit(${invoice.customerId})`);
   });
 }
 
