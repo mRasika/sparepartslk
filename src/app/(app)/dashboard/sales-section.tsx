@@ -13,6 +13,8 @@ import {
   type TopSort,
 } from "@/server/services/sales-analytics";
 import { PeriodPicker } from "./period-picker";
+import { SalesTrendChart } from "./sales-trend-chart";
+import { TopSellers } from "./top-sellers";
 
 export type SalesParams = { period?: string; from?: string; to?: string; top?: string; sort?: string };
 
@@ -59,6 +61,7 @@ export async function SalesSection({ user, params }: { user: SessionUser; params
   if (top !== "parts") keep.top = top;
   if (sort !== "sales") keep.sort = sort;
   const compareLabel = formatRange(period.compare, today);
+  const periodParams: SalesParams = period.preset === "custom" ? { ...period.range } : { period: period.preset };
 
   return (
     <SectionFrame
@@ -81,9 +84,14 @@ export async function SalesSection({ user, params }: { user: SessionUser; params
       }
     >
       <KpiTiles current={data.current} previous={data.previous} compareLabel={compareLabel} />
-      {/* trend chart: Task 5 */}
+      <SalesTrendChart points={data.trend} bucket={period.bucket} />
       <CashCredit totals={data.current} />
-      {/* top sellers: Task 5 */}
+      <TopSellers
+        rows={data.top}
+        dimension={top}
+        sort={sort}
+        hrefFor={(change) => dashboardHref({ ...periodParams, top, sort, ...change })}
+      />
     </SectionFrame>
   );
 }
