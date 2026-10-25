@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import type { ActionError } from "@/lib/action-result";
 import { formatMoney } from "@/lib/format";
+import { D, fmt } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { createInvoiceAction, discardInvoiceDraftAction, previewInvoiceAction } from "@/server/actions/invoices";
 import type { EditorDraft } from "@/server/services/invoice-drafts";
@@ -59,9 +60,12 @@ export function InvoiceEditor({
   const router = useRouter();
   const pickerRef = useRef<HTMLInputElement>(null);
   const [customer, setCustomer] = useState(initialCustomer);
-  const [paymentType, setPaymentType] = useState<"cash" | "credit">(draft?.paymentType ?? "cash");
+  // No default, even for a reopened draft: a preselected Cash let invoices be saved as paid when no
+  // money was taken. The cashier picks Cash or Credit, and for cash in hand types what was received.
+  const [paymentType, setPaymentType] = useState<"cash" | "credit" | null>(null);
   const [method, setMethod] = useState<"cash" | "bank" | "cheque">(draft?.cashPayment?.method ?? "cash");
   const [reference, setReference] = useState(draft?.cashPayment?.reference ?? "");
+  const [cashReceived, setCashReceived] = useState("");
   const [lines, setLines] = useState<Line[]>(
     () =>
       draft?.lines.map((l, i) => ({
@@ -93,7 +97,8 @@ export function InvoiceEditor({
   const buildInput = useCallback(
     (overrideCreditLimit = false): InvoiceInput => ({
       customerId: customer.id,
-      paymentType,
+      // Previews and drafts don't depend on it; saving is blocked until one is chosen.
+      paymentType: paymentType ?? "cash",
       lines: lines.map((l) => ({ partId: l.part.id, qty: Number(l.qty), discount: discountOrUndefined(l.discount) })),
       invoiceDiscount: discountOrUndefined(invoiceDiscount),
       overrideCreditLimit: overrideCreditLimit || undefined,
@@ -166,12 +171,36 @@ export function InvoiceEditor({
 
   function changeCustomer(c: PickedCustomer) {
     setCustomer(c);
-    if (c.isWalkIn) setPaymentType("cash");
+    if (c.isWalkIn && paymentType === "credit") setPaymentType(null);
     pickerRef.current?.focus();
   }
 
+  // What still stops a save on the payment side, in the order the cashier fixes it.
+  const cashInHand = paymentType === "cash" && method === "cash";
+  const received = cashReceived.trim();
+  const change = cashInHand && AMOUNT.test(received) && preview ? D(received).minus(preview.total) : null;
+  const paymentProblem =
+    paymentType === null
+      ? "Choose Cash or Credit"
+      : cashInHand && !AMOUNT.test(received)
+        ? "Enter the cash received"
+        : cashInHand && !change
+          ? "Working out the total…"
+          : change?.isNegative()
+            ? `Cash received is Rs ${formatMoney(fmt(change.abs()))} short`
+            : paymentType === "cash" && method !== "cash" && !reference.trim()
+              ? method === "cheque"
+                ? "Enter the cheque number"
+                : "Enter the transfer reference"
+              : null;
+  const canSave = lines.length > 0 && linesValid && !paymentProblem;
+
   function save(mode: SaveMode, overrideCreditLimit = false) {
-    if (lines.length === 0 || !linesValid) return;
+    if (!canSave) {
+      // Ctrl + Enter bypasses the disabled buttons; say why nothing happened.
+      if (lines.length > 0 && linesValid && paymentProblem) toast.error(paymentProblem);
+      return;
+    }
     setError(null);
     saving.current = true;
     startTransition(async () => {
@@ -215,7 +244,14 @@ export function InvoiceEditor({
           <CustomerPicker value={customer} onChange={changeCustomer} />
           <fieldset className="grid content-start gap-1.5">
             <legend className="mb-1.5 text-sm font-medium">Payment</legend>
-            <div className="inline-flex rounded-lg border bg-card p-0.5" role="radiogroup">
+            <div
+              className={cn(
+                "inline-flex rounded-lg border bg-card p-0.5",
+                paymentType === null && lines.length > 0 && "border-warning ring-2 ring-warning/30",
+              )}
+              role="radiogroup"
+              aria-label="Payment"
+            >
               {(["cash", "credit"] as const).map((t) => {
                 const disabled = t === "credit" && customer.isWalkIn;
                 return (
@@ -225,7 +261,13 @@ export function InvoiceEditor({
                     role="radio"
                     aria-checked={paymentType === t}
                     disabled={disabled}
-                    onClick={() => setPaymentType(t)}
+                    onClick={() => {
+                      setPaymentType(t);
+                      // Straight to the amount: the next thing the cashier does is count the money.
+                      if (t === "cash" && method === "cash") {
+                        requestAnimationFrame(() => document.getElementById("cash-received")?.focus());
+                      }
+                    }}
                     className={cn(
                       "h-8 rounded-md px-4 text-sm font-medium transition-colors disabled:opacity-40",
                       paymentType === t ? "bg-primary text-primary-foreground" : "hover:bg-muted",
@@ -307,13 +349,40 @@ export function InvoiceEditor({
               <NativeSelectOption value="bank">Bank transfer</NativeSelectOption>
               <NativeSelectOption value="cheque">Cheque</NativeSelectOption>
             </NativeSelect>
-            {method !== "cash" && (
+            {method !== "cash" ? (
               <Input
                 aria-label="Payment reference"
                 placeholder={method === "cheque" ? "Cheque number" : "Transfer reference"}
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
               />
+            ) : (
+              <>
+                <label htmlFor="cash-received" className="mt-1 text-sm font-medium">
+                  Cash received (Rs)
+                </label>
+                <Input
+                  id="cash-received"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder={preview ? formatMoney(preview.total) : ""}
+                  value={cashReceived}
+                  onChange={(e) => setCashReceived(e.target.value)}
+                  aria-invalid={change?.isNegative() || undefined}
+                  className="h-11 text-right text-lg font-semibold tabular-nums"
+                />
+                <div className="flex items-baseline justify-between text-sm" aria-live="polite">
+                  <span className="text-muted-foreground">Change</span>
+                  <span
+                    className={cn(
+                      "text-lg font-semibold tabular-nums",
+                      change?.isNegative() && "text-destructive",
+                    )}
+                  >
+                    {change && !change.isNegative() ? `Rs ${formatMoney(fmt(change))}` : "–"}
+                  </span>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -325,14 +394,19 @@ export function InvoiceEditor({
         )}
 
         <div className="grid gap-2">
-          <Button type="submit" size="lg" disabled={pending || lines.length === 0 || !linesValid} className="h-11">
+          {lines.length > 0 && linesValid && paymentProblem && (
+            <p className="text-center text-sm font-medium text-warning-foreground" role="status">
+              {paymentProblem}
+            </p>
+          )}
+          <Button type="submit" size="lg" disabled={pending || !canSave} className="h-11">
             <Save /> {pending ? "Saving…" : "Save invoice"}
           </Button>
           <div className="grid grid-cols-2 gap-2">
-            <Button type="button" variant="outline" disabled={pending || lines.length === 0 || !linesValid} onClick={() => save("a4")}>
+            <Button type="button" variant="outline" disabled={pending || !canSave} onClick={() => save("a4")}>
               <Printer /> Save, print A4
             </Button>
-            <Button type="button" variant="outline" disabled={pending || lines.length === 0 || !linesValid} onClick={() => save("thermal")}>
+            <Button type="button" variant="outline" disabled={pending || !canSave} onClick={() => save("thermal")}>
               <ReceiptText /> Save, receipt
             </Button>
           </div>

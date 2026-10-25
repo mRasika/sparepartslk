@@ -41,8 +41,21 @@ test("an unfinished invoice is kept as a draft and can be continued", async ({ p
   await expect(page.getByLabel("Qty for BRK-001")).toHaveValue("2");
   await expect(page.getByLabel("Qty for OIL-002")).toHaveCount(0);
 
+  // Nothing is preselected for payment: saving waits for Cash/Credit and, for cash, the money received.
+  const save = page.getByRole("button", { name: "Save invoice" });
+  await expect(page.getByText("Choose Cash or Credit")).toBeVisible();
+  await expect(save).toBeDisabled();
+  await page.getByRole("radio", { name: "Cash" }).click();
+  await expect(page.getByText("Enter the cash received")).toBeVisible();
+  await page.getByLabel("Cash received (Rs)").fill("1500");
+  await expect(page.getByText("Cash received is Rs 500.00 short")).toBeVisible();
+  await expect(save).toBeDisabled();
+  await page.getByLabel("Cash received (Rs)").fill("2500");
+  await expect(page.getByText("Rs 500.00", { exact: true })).toBeVisible(); // change
+  await expect(save).toBeEnabled();
+
   // Issuing it removes the draft.
-  await page.getByRole("button", { name: "Save invoice" }).click();
+  await save.click();
   await expect(page.getByRole("heading", { name: /INV-/ })).toBeVisible();
   await page.goto("/invoices/new");
   await expect(page.getByRole("heading", { name: "New invoice" })).toBeVisible();
