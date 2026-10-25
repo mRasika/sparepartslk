@@ -129,3 +129,16 @@ export function formatRange(r: DateRange, today: string = colomboDate()): string
   if (fm === tm) return `${day(fm, fd)}–${td}${suffix}`;
   return `${day(fm, fd)} – ${day(tm, td)}${suffix}`;
 }
+
+/** The earliest From the Custom picker allows with a To of today (the 3-year limit). */
+export function earliestCustomFrom(today: string = colomboDate()): string {
+  return addDays(today, -(MAX_CUSTOM_DAYS - 1));
+}
+
+/** Chart axis label for a bucket: "Oct" / "Oct 19", with the year when the chart spans years. */
+export function bucketLabel(date: string, bucket: Bucket, withYear: boolean): string {
+  const month = MONTHS[Number(date.slice(5, 7)) - 1];
+  if (bucket === "month") return withYear ? `${month} ’${date.slice(2, 4)}` : month;
+  const day = `${month} ${Number(date.slice(8, 10))}`;
+  return withYear ? `${day}, ${date.slice(0, 4)}` : day;
+}

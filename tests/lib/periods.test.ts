@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addDays } from "@/lib/dates";
-import { formatRange, resolvePeriod } from "@/lib/periods";
+import { bucketLabel, earliestCustomFrom, formatRange, resolvePeriod } from "@/lib/periods";
 
 const T = "2026-10-25"; // a Sunday
 
@@ -106,5 +106,24 @@ describe("formatRange", () => {
     [{ from: "2026-10-19", to: "2026-10-19" }, "Oct 19"],
   ])("formats %j as %s", (range, text) => {
     expect(formatRange(range, T)).toBe(text);
+  });
+});
+
+describe("bucketLabel", () => {
+  it.each([
+    ["2026-10-01", "month", false, "Oct"],
+    ["2025-10-01", "month", true, "Oct ’25"],
+    ["2026-10-19", "day", false, "Oct 19"],
+    ["2025-10-19", "week", true, "Oct 19, 2025"],
+  ] as const)("labels %s by %s (year %s) as %s", (date, bucket, withYear, text) => {
+    expect(bucketLabel(date, bucket, withYear)).toBe(text);
+  });
+});
+
+describe("earliestCustomFrom", () => {
+  it("is the earliest From a custom range ending today accepts", () => {
+    const from = earliestCustomFrom(T);
+    expect(resolvePeriod({ from, to: T }, T).preset).toBe("custom");
+    expect(resolvePeriod({ from: addDays(from, -1), to: T }, T).preset).toBe("month");
   });
 });

@@ -3,20 +3,13 @@
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from "recharts";
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { formatMoney } from "@/lib/format";
-import type { Bucket } from "@/lib/periods";
+import { type Bucket, bucketLabel } from "@/lib/periods";
 import type { TrendPoint } from "@/server/services/sales-analytics";
 
 const config = {
   netSales: { label: "Net sales", color: "var(--chart-2)" },
   grossProfit: { label: "Gross profit", color: "var(--primary)" },
 } satisfies ChartConfig;
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function axisLabel(date: string, bucket: Bucket): string {
-  const month = MONTHS[Number(date.slice(5, 7)) - 1];
-  return bucket === "month" ? month : `${month} ${Number(date.slice(8, 10))}`;
-}
 
 /** 120000 → "120k", 1500000 → "1.5M". */
 function shortMoney(value: number): string {
@@ -29,9 +22,10 @@ function shortMoney(value: number): string {
 /** Net sales as bars and gross profit as a line, per day, week or month. */
 export function SalesTrendChart({ points, bucket }: { points: TrendPoint[]; bucket: Bucket }) {
   const empty = points.every((p) => Number(p.netSales) === 0 && Number(p.grossProfit) === 0);
+  const withYear = points.length > 0 && points[0].bucketStart.slice(0, 4) !== points.at(-1)!.bucketStart.slice(0, 4);
   // Numbers are for plotting only; the tooltip shows the exact amounts.
   const data = points.map((p) => ({
-    label: axisLabel(p.bucketStart, bucket),
+    label: bucketLabel(p.bucketStart, bucket, withYear),
     netSales: Number(p.netSales),
     grossProfit: Number(p.grossProfit),
     exact: p,

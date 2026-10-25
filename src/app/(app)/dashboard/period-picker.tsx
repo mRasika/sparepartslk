@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { earliestCustomFrom } from "@/lib/periods";
 import { cn } from "@/lib/utils";
 
 /** Preset period links plus a Custom from/to popover; the period lives in the URL. */
@@ -58,6 +59,7 @@ export function PeriodPicker({
                 type="date"
                 name="from"
                 required
+                min={earliestCustomFrom(today)}
                 max={today}
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
