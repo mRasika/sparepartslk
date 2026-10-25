@@ -43,6 +43,13 @@
       "when": 1792912572123,
       "tag": "0005_part_keywords",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792913017425,
+      "tag": "0006_tier_rules",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { Plus, SlidersHorizontal } from "lucide-react";
+import { Percent, Plus, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +45,9 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
             <>
               <Link href="/parts/settings" className={buttonVariants({ variant: "outline" })}>
                 <SlidersHorizontal /> Categories, brands, models
+              </Link>
+              <Link href="/parts/prices" className={buttonVariants({ variant: "outline" })}>
+                <Percent /> Change prices
               </Link>
               <Link href="/parts/new" className={buttonVariants()}>
                 <Plus /> New part

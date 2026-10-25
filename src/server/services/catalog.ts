@@ -327,7 +327,13 @@ export async function getPart(user: SessionUser, id: string): Promise<PartDetail
 
 export async function listPriceTiers() {
   return db
-    .select({ id: priceTiers.id, name: priceTiers.name, isDefault: priceTiers.isDefault })
+    .select({
+      id: priceTiers.id,
+      name: priceTiers.name,
+      isDefault: priceTiers.isDefault,
+      discountPct: priceTiers.discountPct,
+      roundTo: priceTiers.roundTo,
+    })
     .from(priceTiers)
     .orderBy(desc(priceTiers.isDefault), asc(priceTiers.name));
 }

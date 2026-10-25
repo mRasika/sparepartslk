@@ -40,6 +40,7 @@ export default async function EditPartPage({ params }: { params: Promise<{ id: s
           fitmentIds: part.fitments.map((f) => f.vehicleModelId),
         }}
         tiers={tiers}
+        avgCost={part.avgCost}
         categories={categories}
         brands={brands}
         vehicleModels={vehicleModels}

@@ -1,5 +1,7 @@
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db/client";
+import { priceTiers } from "@/server/db/schema";
 import { DiscountNotAllowed, PriceMissing } from "@/server/errors";
 import { assertDiscountAllowed, computeTotals, lookupPrices, resolvePrices } from "@/server/services/pricing";
 import { resetDb } from "../helpers/db";
@@ -22,6 +24,25 @@ describe("resolvePrices", () => {
     const { id } = await makePart({ prices: [{ tierId: tiers.Retail, price: "1000.00" }] });
     const prices = await resolvePrices(db, tiers.Dealer, [id]);
     expect(prices.get(id)).toBe("1000.00");
+  });
+
+  it("applies the tier's rule to the default price when the tier has no typed price", async () => {
+    const tiers = await tierIds();
+    await db.update(priceTiers).set({ discountPct: "12.5", roundTo: 10 }).where(eq(priceTiers.id, tiers.Dealer));
+    const ruled = await makePart({ prices: [{ tierId: tiers.Retail, price: "1234.00" }] });
+    const typed = await makePart(); // Dealer 900.00 typed
+    const prices = await lookupPrices(db, tiers.Dealer, [ruled.id, typed.id]);
+    expect(prices.get(ruled.id)).toBe("1080.00"); // 1234 × 0.875 = 1079.75 → nearest 10
+    expect(prices.get(typed.id)).toBe("900.00");
+  });
+
+  it("ignores a rule on the default tier and keeps cents when rounding is off", async () => {
+    const tiers = await tierIds();
+    await db.update(priceTiers).set({ discountPct: "50" }).where(eq(priceTiers.id, tiers.Retail));
+    await db.update(priceTiers).set({ discountPct: "-3" }).where(eq(priceTiers.id, tiers.Wholesale));
+    const { id } = await makePart({ prices: [{ tierId: tiers.Retail, price: "333.33" }] });
+    expect((await lookupPrices(db, tiers.Retail, [id])).get(id)).toBe("333.33");
+    expect((await lookupPrices(db, tiers.Wholesale, [id])).get(id)).toBe("343.33"); // 343.3299 → 343.33
   });
 
   it("lookupPrices skips parts with no price instead of throwing", async () => {
