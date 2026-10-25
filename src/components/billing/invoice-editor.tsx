@@ -78,7 +78,10 @@ export function InvoiceEditor({
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const [pending, startTransition] = useTransition();
   const previewId = useRef(0);
-  // The draft's id is made here so every auto-save upserts the same row; it's in the URL once saved.
+  // The draft's id is made here so every auto-save upserts the same row. It is deliberately not put
+  // in the URL: Next.js treats a changed ?draft= as a new page, refetches it from the server and
+  // remounts this editor from the saved draft, dropping lines added since. After a reload the draft
+  // is first under Unfinished invoices.
   const draftId = useRef<string | null>(draft?.id ?? null);
   const draftSaved = useRef(Boolean(draft));
   /** A change the server hasn't seen yet (or can't: half-typed lines). */
@@ -107,10 +110,7 @@ export function InvoiceEditor({
       setPreview(null);
       setError(null);
       dirty.current = false;
-      if (draftSaved.current && draftId.current) {
-        void discardInvoiceDraftAction(draftId.current);
-        window.history.replaceState(null, "", "/invoices/new");
-      }
+      if (draftSaved.current && draftId.current) void discardInvoiceDraftAction(draftId.current);
       draftSaved.current = false;
       draftId.current = null;
       setDraftSavedAt(null);
@@ -125,10 +125,7 @@ export function InvoiceEditor({
       // A save already started would delete the draft; don't recreate it behind its back.
       if (saving.current) return;
       const result = await previewInvoiceAction(buildInput(), thisDraft);
-      if (!draftSaved.current && draftId.current === thisDraft) {
-        draftSaved.current = true;
-        window.history.replaceState(null, "", `/invoices/new?draft=${thisDraft}`);
-      }
+      if (draftId.current === thisDraft) draftSaved.current = true;
       if (id !== previewId.current) return;
       dirty.current = false;
       setDraftSavedAt(new Date());
