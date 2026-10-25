@@ -203,3 +203,12 @@ export async function getSalesAnalytics(
   ]);
   return { current, previous, trend, top: topRows };
 }
+
+/** Net sales per part over a range (same lines as the totals: discount shared, returns off). */
+export async function salesByPart(range: DateRange): Promise<{ partId: string; sales: string }[]> {
+  const rows = await db.execute<{ part_id: string; sales: string }>(sql`
+    with lines as (${saleLines(range)})
+    select part_id, sum(net)::numeric(12, 2)::text as sales from lines group by part_id
+  `);
+  return rows.map((r) => ({ partId: r.part_id, sales: r.sales }));
+}
