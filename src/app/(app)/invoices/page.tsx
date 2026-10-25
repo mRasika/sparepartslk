@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { FilePen, Plus } from "lucide-react";
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { formatDate, formatMoney } from "@/lib/format";
 import { requireUser } from "@/server/auth";
+import { countInvoiceDrafts } from "@/server/services/invoice-drafts";
 import { listInvoices } from "@/server/services/invoicing";
 
 type SearchParams = Promise<{ q?: string; status?: string; from?: string; to?: string; unpaid?: string }>;
@@ -22,13 +23,16 @@ type SearchParams = Promise<{ q?: string; status?: string; from?: string; to?: s
 export default async function InvoicesPage({ searchParams }: { searchParams: SearchParams }) {
   await requireUser();
   const { q = "", status = "", from = "", to = "", unpaid = "" } = await searchParams;
-  const rows = await listInvoices({
-    q,
-    status: status === "issued" || status === "cancelled" ? status : undefined,
-    from: from || undefined,
-    to: to || undefined,
-    outstandingOnly: unpaid === "1",
-  });
+  const [rows, draftCount] = await Promise.all([
+    listInvoices({
+      q,
+      status: status === "issued" || status === "cancelled" ? status : undefined,
+      from: from || undefined,
+      to: to || undefined,
+      outstandingOnly: unpaid === "1",
+    }),
+    countInvoiceDrafts(),
+  ]);
   const filtered = Boolean(q || status || from || to || unpaid);
 
   return (
@@ -36,9 +40,16 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Sea
       <PageHeader
         title="Invoices"
         actions={
-          <Link href="/invoices/new" className={buttonVariants()}>
-            <Plus /> New invoice
-          </Link>
+          <>
+            {draftCount > 0 && (
+              <Link href="/invoices/new" className={buttonVariants({ variant: "outline" })}>
+                <FilePen /> {draftCount} unfinished
+              </Link>
+            )}
+            <Link href="/invoices/new" className={buttonVariants()}>
+              <Plus /> New invoice
+            </Link>
+          </>
         }
       />
       <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
