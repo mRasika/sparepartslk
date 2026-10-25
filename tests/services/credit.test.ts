@@ -69,7 +69,7 @@ describe("getCreditSummary", () => {
     await receivePayment(admin, { customerId: v.id, amount: "1000.00", method: "cash", allocations: [] });
 
     const s = await getCreditSummary();
-    expect(s.customers.find((c) => c.name === "V")).toMatchObject({ owed: "1000.00", limitUsedPct: 20, lastPaidOn: today });
+    expect(s.customers.find((c) => c.name === "V")).toMatchObject({ owed: "1000.00", limitUsedPct: 0, overLimit: false, lastPaidOn: today });
     expect(s.unappliedCredit).toBe("1000.00");
   });
 

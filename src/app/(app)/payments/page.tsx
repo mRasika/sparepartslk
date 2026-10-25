@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AGING_GROUPS, agingGroup, isAgingGroupKey, type AgingGroupKey } from "@/lib/aging";
+import { AGING_GROUPS, agingGroup, isAgingGroupKey, outstandingHref, type AgingGroupKey } from "@/lib/aging";
 import { colomboDate } from "@/lib/dates";
 import { formatDate, formatMoney } from "@/lib/format";
 import { D, fmt, sum } from "@/lib/money";
@@ -22,7 +22,7 @@ import { requireUser } from "@/server/auth";
 import { getCreditSummary } from "@/server/services/credit";
 import { outstandingInvoices } from "@/server/services/customers";
 import { listPayments } from "@/server/services/payments";
-import { CreditSummary, outstandingHref } from "./credit-summary";
+import { CreditSummary } from "./credit-summary";
 
 type SearchParams = Promise<{ view?: string; q?: string; overdue?: string; late?: string; by?: string }>;
 
@@ -165,17 +165,17 @@ async function Outstanding({
   const lateLabel = AGING_GROUPS.find((g) => g.key === late)?.label;
   return (
     <>
-      <CreditSummary summary={summary} late={late} by={by} />
+      <CreditSummary summary={summary} late={late} by={by} overdueOnly={overdueOnly} />
       <div className="mb-4 flex gap-2">
         <Link
-          href="/payments?view=outstanding"
+          href={outstandingHref({ by })}
           className={buttonVariants({ variant: overdueOnly || late ? "ghost" : "secondary" })}
           aria-current={!overdueOnly && !late ? "page" : undefined}
         >
           All unpaid
         </Link>
         <Link
-          href="/payments?view=outstanding&overdue=1"
+          href={outstandingHref({ by, overdue: true })}
           className={buttonVariants({ variant: overdueOnly ? "secondary" : "ghost" })}
           aria-current={overdueOnly ? "page" : undefined}
         >

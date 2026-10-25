@@ -50,14 +50,14 @@ All dates are Colombo business dates (`colomboDate()`). "Open invoice" and "owed
 **Who owes** — one row per customer with an open invoice:
 - **Owed**: sum of their open invoices' `outstanding`. **Overdue**: the part with `due_date < today` (or "—").
 - **Oldest late**: the largest `days_overdue` among their open invoices ("—" when none is overdue).
-- **Credit limit used**: owed ÷ `credit_limit` as a whole %, with a small bar capped visually at 100%; **Over limit** badge when owed > credit limit. When `credit_limit` is 0 the cell shows "No limit set".
+- **Credit limit used**: account balance (net of credit held, the figure the credit check on new sales uses) ÷ `credit_limit` as a whole %, with a small bar capped visually at 100%; **Over limit** badge when the balance is above the limit. A `credit_limit` of 0 means cash only (as on the customer pages): the cell shows "Cash only", with **Over limit** when the balance is above 0. *(Amended after review: was owed ÷ limit and "No limit set".)*
 - **Last paid**: date of their latest active, non-refund payment ("Never" when none).
 - Sort: `?by=owed` (default) — owed desc, then name; `?by=overdue` — overdue desc, then oldest late desc, then name. Each row links to `/customers/<id>`.
 - Every customer with an open invoice is listed (no top-N cut); the shop has hundreds of customers at most.
 
 ## 4. Invoice list filter
 
-The existing list keeps "All unpaid" and "Overdue only". Clicking an aging group (in the bar or its legend) adds `late=not-due|1-30|31-60|61-90|90+`; the list then shows only that group's invoices, with a line "Showing 31–60 days late · Show all". An unknown `late` value is ignored (all unpaid). `overdue=1` keeps its meaning (all overdue groups). `by` and `late` are kept when switching the other.
+The existing list keeps "All unpaid" and "Overdue only". Clicking an aging group (in the bar or its legend) adds `late=not-due|1-30|31-60|61-90|90+`; the list then shows only that group's invoices, with a line "Showing 31–60 days late · Show all". An unknown `late` value is ignored (all unpaid). `overdue=1` keeps its meaning (all overdue groups). The sort (`by`) and the filters (`late` or `overdue`) keep each other when either changes; choosing a `late` group replaces `overdue`.
 
 ## 5. Look
 

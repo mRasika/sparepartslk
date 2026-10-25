@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { AgingGroupKey, CreditSummary as Summary } from "@/lib/aging";
+import { outstandingHref, type AgingGroupKey, type CreditSummary as Summary } from "@/lib/aging";
 import { formatDate, formatMoney } from "@/lib/format";
 import { D } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -18,16 +18,18 @@ const GROUP_COLOR: Record<AgingGroupKey, string> = {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Outstanding view URL with only the params that differ from the defaults. */
-export function outstandingHref(p: { late?: AgingGroupKey | null; by?: "owed" | "overdue" }): string {
-  const q = new URLSearchParams({ view: "outstanding" });
-  if (p.late) q.set("late", p.late);
-  if (p.by === "overdue") q.set("by", "overdue");
-  return `/payments?${q}`;
-}
-
 /** Who owes what and how late, above the invoice list (spec §2). */
-export function CreditSummary({ summary: s, late, by }: { summary: Summary; late: AgingGroupKey | null; by: "owed" | "overdue" }) {
+export function CreditSummary({
+  summary: s,
+  late,
+  by,
+  overdueOnly,
+}: {
+  summary: Summary;
+  late: AgingGroupKey | null;
+  by: "owed" | "overdue";
+  overdueOnly: boolean;
+}) {
   const owed = D(s.owed);
   return (
     <div className="mb-6 flex flex-col gap-4">
@@ -95,7 +97,7 @@ export function CreditSummary({ summary: s, late, by }: { summary: Summary; late
               {(["owed", "overdue"] as const).map((key) => (
                 <Link
                   key={key}
-                  href={outstandingHref({ late, by: key })}
+                  href={outstandingHref({ late, by: key, overdue: overdueOnly })}
                   scroll={false}
                   aria-current={by === key ? "page" : undefined}
                   className={buttonVariants({ variant: by === key ? "secondary" : "ghost", size: "sm" })}
@@ -158,7 +160,15 @@ function Tile({ label, value, note, tone }: { label: string; value: string; note
 }
 
 function LimitUsed({ pct, over }: { pct: number | null; over: boolean }) {
-  if (pct === null) return <span className="text-sm text-muted-foreground">No limit set</span>;
+  if (pct === null) {
+    // A 0 limit means cash only (as on the customer pages); any debt then is over it.
+    return (
+      <span className="flex items-center gap-2 whitespace-nowrap">
+        <span className="text-sm text-muted-foreground">Cash only</span>
+        {over && <Badge variant="destructive">Over limit</Badge>}
+      </span>
+    );
+  }
   return (
     <span className="flex items-center gap-2 whitespace-nowrap">
       <span className="h-1.5 w-12 overflow-hidden rounded-full bg-muted" aria-hidden>

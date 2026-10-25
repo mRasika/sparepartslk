@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agingGroup, isAgingGroupKey, summarizeCredit, type CustomerFacts, type OpenInvoice } from "@/lib/aging";
+import { agingGroup, isAgingGroupKey, outstandingHref, summarizeCredit, type CustomerFacts, type OpenInvoice } from "@/lib/aging";
 import { addDays } from "@/lib/dates";
 
 const T = "2026-10-25";
@@ -64,7 +64,7 @@ describe("summarizeCredit", () => {
     expect(s.groups.map((g) => g.invoices)).toEqual([2, 1, 1, 0, 1]);
     expect(s.customers).toEqual([
       { customerId: "A", name: "A", owed: "9000.00", overdue: "3000.00", oldestDaysLate: 40, limitUsedPct: 90, overLimit: false, lastPaidOn: "2026-10-20" },
-      { customerId: "B", name: "B", owed: "5000.00", overdue: "4000.00", oldestDaysLate: 100, limitUsedPct: null, overLimit: false, lastPaidOn: null },
+      { customerId: "B", name: "B", owed: "5000.00", overdue: "4000.00", oldestDaysLate: 100, limitUsedPct: null, overLimit: true, lastPaidOn: null },
     ]);
   });
 
@@ -89,6 +89,18 @@ describe("summarizeCredit", () => {
     expect(s.customers.find((c) => c.name === "A")).toMatchObject({ limitUsedPct: 113, overLimit: true });
   });
 
+  it("measures the credit limit on the account balance, like the sales check", () => {
+    // A holds Rs 2,000 of unmatched credit: invoices say 9,000 owed, the account says 7,000.
+    const held = facts.map((f) => (f.customerId === "A" ? { ...f, creditLimit: "8000.00", balance: "7000.00" } : f));
+    const s = summarizeCredit({ today: T, open, customers: held, creditSales90: "25000.00" });
+    expect(s.customers.find((c) => c.name === "A")).toMatchObject({ owed: "9000.00", limitUsedPct: 88, overLimit: false });
+  });
+
+  it("treats a 0 limit as cash only: owing anything is over the limit", () => {
+    const s = summarizeCredit({ today: T, open, customers: facts, creditSales90: "25000.00" });
+    expect(s.customers.find((c) => c.name === "B")).toMatchObject({ limitUsedPct: null, overLimit: true });
+  });
+
   it("has no DSO without credit sales", () => {
     expect(summarizeCredit({ today: T, open, customers: facts, creditSales90: "0.00" }).dso).toBeNull();
   });
@@ -97,5 +109,19 @@ describe("summarizeCredit", () => {
     const s = summarizeCredit({ today: T, open: [], customers: [], creditSales90: "0.00" });
     expect(s).toMatchObject({ owed: "0.00", overduePct: 0, customersOwing: 0, dso: null, customers: [] });
     expect(s.groups.map((g) => [g.amount, g.invoices])).toEqual(Array(5).fill(["0.00", 0]));
+  });
+});
+
+describe("outstandingHref", () => {
+  it("keeps the sort and overdue-only together", () => {
+    expect(outstandingHref({ by: "overdue", overdue: true })).toBe("/payments?view=outstanding&overdue=1&by=overdue");
+  });
+
+  it("drops overdue-only when a group is chosen", () => {
+    expect(outstandingHref({ late: "31-60", overdue: true })).toBe("/payments?view=outstanding&late=31-60");
+  });
+
+  it("leaves defaults out", () => {
+    expect(outstandingHref({ by: "owed" })).toBe("/payments?view=outstanding");
   });
 });

@@ -40,8 +40,9 @@ export type CustomerCreditRow = {
   overdue: string;
   /** 0 when nothing is overdue. */
   oldestDaysLate: number;
-  /** null when the customer has no credit limit. */
+  /** Account balance ÷ credit limit; null for a cash-only customer (limit 0). */
   limitUsedPct: number | null;
+  /** Balance above the limit, the same test that blocks a credit sale; any debt on a cash-only customer. */
   overLimit: boolean;
   lastPaidOn: string | null;
 };
@@ -87,14 +88,16 @@ export function summarizeCredit(
     const cOwed = amounts(invoices);
     const late = invoices.map((i) => daysLate(i.dueDate, today)).filter((d) => d > 0);
     const limit = D(f?.creditLimit ?? "0");
+    // The limit is measured like the sales check: on the account balance, net of credit held.
+    const balance = D(f?.balance ?? fmt(cOwed));
     return {
       customerId,
       name: invoices[0].customerName,
       owed: fmt(cOwed),
       overdue: fmt(amounts(invoices.filter((i) => daysLate(i.dueDate, today) > 0))),
       oldestDaysLate: late.length ? Math.max(...late) : 0,
-      limitUsedPct: limit.greaterThan(0) ? pct(cOwed, limit) : null,
-      overLimit: limit.greaterThan(0) && cOwed.greaterThan(limit),
+      limitUsedPct: limit.greaterThan(0) ? pct(balance.greaterThan(0) ? balance : D(0), limit) : null,
+      overLimit: balance.greaterThan(limit),
       lastPaidOn: f?.lastPaidOn ?? null,
     };
   });
@@ -128,4 +131,16 @@ export function summarizeCredit(
     }),
     customers,
   };
+}
+
+/**
+ * Payments › Outstanding URL with only the params that differ from the defaults. A chosen aging
+ * group replaces "overdue only"; the sort and the filters keep each other.
+ */
+export function outstandingHref(p: { late?: AgingGroupKey | null; by?: "owed" | "overdue"; overdue?: boolean }): string {
+  const q = new URLSearchParams({ view: "outstanding" });
+  if (p.late) q.set("late", p.late);
+  else if (p.overdue) q.set("overdue", "1");
+  if (p.by === "overdue") q.set("by", "overdue");
+  return `/payments?${q}`;
 }
