@@ -23,12 +23,16 @@ export async function loadActiveUser(userId: string): Promise<SessionUser | null
   return row ?? null;
 }
 
-/** The signed-in, active user for this request (memoised per request). */
+/**
+ * The signed-in, active user for this request (memoised per request). The JWT is verified locally
+ * (asymmetric signing keys), so a revoked session lasts until the token expires; deactivated users
+ * are still cut off at once by the profile check.
+ */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) return null;
-  return loadActiveUser(data.user.id);
+  const { data, error } = await supabase.auth.getClaims();
+  if (error || !data?.claims.sub) return null;
+  return loadActiveUser(data.claims.sub);
 });
 
 export async function requireUser(): Promise<SessionUser> {

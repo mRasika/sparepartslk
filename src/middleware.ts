@@ -22,12 +22,11 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  // getUser() revalidates the token with Supabase Auth; don't add code between client creation and this call.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims() verifies the JWT locally against the project's cached signing keys (no Auth round trip
+  // unless the token needs refreshing); don't add code between client creation and this call.
+  const { data } = await supabase.auth.getClaims();
 
-  if (!user) {
+  if (!data?.claims) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
