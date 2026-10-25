@@ -169,6 +169,7 @@ export const salesReturns = pgTable(
   (t) => [
     index("sales_returns_invoice_idx").on(t.invoiceId),
     index("sales_returns_customer_idx").on(t.customerId),
+    index("sales_returns_return_date_idx").on(t.returnDate),
   ],
 );
 
