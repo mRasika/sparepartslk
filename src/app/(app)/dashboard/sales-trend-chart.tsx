@@ -7,8 +7,8 @@ import { type Bucket, bucketLabel } from "@/lib/periods";
 import type { TrendPoint } from "@/server/services/sales-analytics";
 
 const config = {
-  netSales: { label: "Net sales", color: "var(--chart-2)" },
-  grossProfit: { label: "Gross profit", color: "var(--primary)" },
+  netSales: { label: "Net sales", color: "var(--chart-1)" },
+  grossProfit: { label: "Gross profit", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
 /** 120000 → "120k", 1500000 → "1.5M". */
@@ -38,10 +38,10 @@ export function SalesTrendChart({ points, bucket }: { points: TrendPoint[]; buck
         {!empty && (
           <p className="flex gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-sm bg-chart-2" aria-hidden /> Net sales
+              <span className="size-2.5 rounded-sm bg-chart-1" aria-hidden /> Net sales
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-0.5 w-3 rounded bg-primary" aria-hidden /> Gross profit
+              <span className="h-0.5 w-3 rounded bg-chart-2" aria-hidden /> Gross profit
             </span>
           </p>
         )}
@@ -69,8 +69,15 @@ export function SalesTrendChart({ points, bucket }: { points: TrendPoint[]; buck
                 />
               }
             />
-            <Bar dataKey="netSales" fill="var(--color-netSales)" radius={3} />
-            <Line dataKey="grossProfit" stroke="var(--color-grossProfit)" strokeWidth={2} dot={false} type="monotone" />
+            <Bar dataKey="netSales" fill="var(--color-netSales)" radius={[4, 4, 0, 0]} />
+            <Line
+              dataKey="grossProfit"
+              stroke="var(--color-grossProfit)"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--card)" }}
+              type="monotone"
+            />
           </ComposedChart>
         </ChartContainer>
       )}

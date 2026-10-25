@@ -184,17 +184,18 @@ function CashCredit({ totals }: { totals: SalesTotals }) {
   return (
     <div className="rounded-lg border bg-card p-4 sm:p-5">
       <h3 className="text-sm text-muted-foreground">Cash vs credit</h3>
-      <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-muted" aria-hidden>
-        <div className="bg-primary" style={{ width: `${cashPct}%` }} />
-        <div className="bg-chart-2" style={{ width: `${100 - cashPct}%` }} />
+      {/* A 2px gap separates the two parts; a part of 0% is left out so no gap dangles. */}
+      <div className="mt-3 flex h-3 gap-0.5 overflow-hidden rounded-full" aria-hidden>
+        {cashPct > 0 && <div className="bg-chart-3" style={{ width: `${cashPct}%` }} />}
+        {cashPct < 100 && <div className="bg-chart-4" style={{ width: `${100 - cashPct}%` }} />}
       </div>
       <p className="mt-2 flex flex-wrap justify-between gap-x-4 text-sm tabular-nums">
         <span>
-          <span className="mr-1.5 inline-block size-2 rounded-full bg-primary" aria-hidden />
+          <span className="mr-1.5 inline-block size-2 rounded-full bg-chart-3" aria-hidden />
           Cash {cashPct}% · Rs {formatMoney(totals.cashSales)}
         </span>
         <span>
-          <span className="mr-1.5 inline-block size-2 rounded-full bg-chart-2" aria-hidden />
+          <span className="mr-1.5 inline-block size-2 rounded-full bg-chart-4" aria-hidden />
           Credit {100 - cashPct}% · Rs {formatMoney(totals.creditSales)}
         </span>
       </p>

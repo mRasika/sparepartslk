@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-/** The `--name: #rrggbb;` tokens of the `.dark { … }` block in globals.css. */
-function darkTokens(): Record<string, string> {
+/** The `--name: value;` tokens of one block (`:root` or `.dark`) in globals.css. */
+function tokensOf(selector: ":root" | ".dark"): Record<string, string> {
   const css = readFileSync("src/app/globals.css", "utf8");
-  const block = css.match(/\n\.dark \{([^}]*)\}/)?.[1] ?? "";
+  const start = css.indexOf(`\n${selector} {`);
+  const block = css.slice(start, css.indexOf("}", start));
   return Object.fromEntries([...block.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
 }
+const darkTokens = () => tokensOf(".dark");
 
 function luminance(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => {
@@ -54,5 +56,25 @@ describe("dark theme colours", () => {
 
   it.each(TEXT_PAIRS)("keeps --%s readable on --%s (WCAG AA 4.5:1)", (text, surface) => {
     expect(contrast(tokens[text], tokens[surface])).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+// Series colours (validated with the dataviz checker for colour-blind separation): marks need
+// 3:1 against the card they sit on. Light aqua is 2.82:1, allowed because the cash/credit bar
+// always shows its text labels.
+describe("chart colours", () => {
+  const LIGHT_CARD = "#ffffff";
+  const SERIES = ["chart-1", "chart-2", "chart-3", "chart-4"];
+
+  it.each(SERIES)("light --%s stands out on the card", (token) => {
+    const hex = tokensOf(":root")[token];
+    expect(hex).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(contrast(hex, LIGHT_CARD)).toBeGreaterThanOrEqual(token === "chart-3" ? 2.8 : 3);
+  });
+
+  it.each(SERIES)("dark --%s stands out on the card", (token) => {
+    const dark = darkTokens();
+    expect(dark[token]).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(contrast(dark[token], dark.card)).toBeGreaterThanOrEqual(3);
   });
 });
