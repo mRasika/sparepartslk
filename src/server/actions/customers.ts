@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { runAction } from "@/lib/action-result";
 import { requireUser } from "@/server/auth";
-import { createCustomer, listCustomers, updateCustomer, type CustomerInput } from "@/server/services/customers";
+import { createCustomer, updateCustomer, type CustomerInput } from "@/server/services/customers";
 
 export async function createCustomerAction(input: CustomerInput) {
   return runAction(async () => {
@@ -18,13 +18,5 @@ export async function updateCustomerAction(id: string, input: CustomerInput) {
     await updateCustomer(await requireUser(), id, input);
     revalidatePath("/customers", "layout");
     return { id };
-  });
-}
-
-/** Active customers for pickers. */
-export async function searchCustomersAction(q: string) {
-  return runAction(async () => {
-    await requireUser();
-    return listCustomers({ q, activeOnly: true, limit: 20 });
   });
 }
