@@ -69,6 +69,7 @@ export default async function PartPage({ params }: { params: Promise<{ id: strin
         <Fact label="Barcode">{part.barcode || "None"}</Fact>
         <Fact label="Category">{part.categoryName || "None"}</Fact>
         <Fact label="Brand">{part.brandName || "None"}</Fact>
+        {part.keywords && <Fact label="Keywords">{part.keywords}</Fact>}
       </dl>
 
       <div className="mb-8 grid gap-8 lg:grid-cols-2">

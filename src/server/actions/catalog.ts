@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { runAction } from "@/lib/action-result";
 import { requireUser } from "@/server/auth";
+import { refreshCatalogRefs } from "@/server/cached";
 import {
   createPart,
   updatePart,
@@ -34,6 +35,7 @@ export async function updatePartAction(id: string, input: PartInput) {
 export async function upsertCategoryAction(input: { id?: string; name: string }) {
   return runAction(async () => {
     const result = await upsertCategory(await requireUser(), input);
+    refreshCatalogRefs();
     revalidatePath("/parts", "layout");
     return result;
   });
@@ -42,6 +44,7 @@ export async function upsertCategoryAction(input: { id?: string; name: string })
 export async function upsertBrandAction(input: { id?: string; name: string }) {
   return runAction(async () => {
     const result = await upsertBrand(await requireUser(), input);
+    refreshCatalogRefs();
     revalidatePath("/parts", "layout");
     return result;
   });
@@ -56,6 +59,7 @@ export async function upsertVehicleModelAction(input: {
 }) {
   return runAction(async () => {
     const result = await upsertVehicleModel(await requireUser(), input);
+    refreshCatalogRefs();
     revalidatePath("/parts", "layout");
     return result;
   });

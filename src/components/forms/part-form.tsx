@@ -18,6 +18,7 @@ type VehicleModel = { id: string; label: string };
 export type PartFormValues = {
   sku: string;
   name: string;
+  keywords: string;
   oemPartNo: string;
   barcode: string;
   categoryId: string;
@@ -34,6 +35,7 @@ export type PartFormValues = {
 export const emptyPartValues: PartFormValues = {
   sku: "",
   name: "",
+  keywords: "",
   oemPartNo: "",
   barcode: "",
   categoryId: "",
@@ -133,6 +135,20 @@ export function PartForm({
         </div>
         <TextField label="Unit" id="unit" value={values.unit} onChange={(v) => set("unit", v)} />
         <TextField label="Bin location" id="binLocation" value={values.binLocation} onChange={(v) => set("binLocation", v)} />
+        <div className="grid gap-1.5 sm:col-span-2">
+          <TextField
+            label="Keywords"
+            id="keywords"
+            value={values.keywords}
+            onChange={(v) => set("keywords", v)}
+            error={fieldError("keywords")}
+            placeholder="e.g. pad set, brake liner, LMP-4471"
+            aria-describedby="keywords-hint"
+          />
+          <p id="keywords-hint" className="text-xs text-muted-foreground">
+            Other names customers use, supplier and cross-reference numbers. Search finds the part by any of these.
+          </p>
+        </div>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2">

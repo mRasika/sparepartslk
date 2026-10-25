@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { LineItemsGrid, type GridLine } from "@/components/forms/line-items-grid";
+import type { PartFilterOptions } from "@/components/forms/part-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,9 +29,11 @@ function lineAmount(l: Line) {
 export function GrnForm({
   suppliers,
   today,
+  filters,
 }: {
   suppliers: { id: string; name: string }[];
   today: string;
+  filters: PartFilterOptions;
 }) {
   const router = useRouter();
   const [supplierId, setSupplierId] = useState("");
@@ -99,6 +102,7 @@ export function GrnForm({
       <LineItemsGrid<Line>
         lines={lines}
         onChange={setLines}
+        pickerFilters={filters}
         newLine={(part) => ({ key: crypto.randomUUID(), part, qty: "1", unitCost: "" })}
         columns={[
           { field: "qty", label: "Qty", className: "text-right", inputMode: "numeric" },

@@ -14,12 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { requireUser } from "@/server/auth";
-import {
-  listBrands,
-  listCategories,
-  listVehicleModels,
-  searchParts,
-} from "@/server/services/catalog";
+import { cachedBrands, cachedCategories, cachedVehicleModels } from "@/server/cached";
+import { searchParts } from "@/server/services/catalog";
 
 type SearchParams = Promise<{ q?: string; category?: string; brand?: string; vehicle?: string }>;
 
@@ -33,9 +29,9 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
       vehicleModelId: vehicle || undefined,
       limit: 200,
     }),
-    listCategories(),
-    listBrands(),
-    listVehicleModels(),
+    cachedCategories(),
+    cachedBrands(),
+    cachedVehicleModels(),
   ]);
   const filtered = Boolean(q || category || brand || vehicle);
 

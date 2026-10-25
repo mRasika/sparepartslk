@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { LineItemsGrid, type GridLine } from "@/components/forms/line-items-grid";
+import type { PartFilterOptions } from "@/components/forms/part-picker";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -20,7 +21,7 @@ const REASONS: { value: Reason; label: string; adminOnly?: boolean }[] = [
   { value: "other", label: "Other", adminOnly: true },
 ];
 
-export function AdjustmentForm({ isAdmin }: { isAdmin: boolean }) {
+export function AdjustmentForm({ isAdmin, filters }: { isAdmin: boolean; filters: PartFilterOptions }) {
   const router = useRouter();
   const [reason, setReason] = useState<Reason>("damage");
   const [note, setNote] = useState("");
@@ -70,6 +71,7 @@ export function AdjustmentForm({ isAdmin }: { isAdmin: boolean }) {
       <LineItemsGrid<Line>
         lines={lines}
         onChange={setLines}
+        pickerFilters={filters}
         newLine={(part) => ({ key: crypto.randomUUID(), part, qty: writeOff ? "1" : "" })}
         columns={[
           {

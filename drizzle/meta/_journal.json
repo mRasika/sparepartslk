@@ -36,6 +36,13 @@
       "when": 1792912142936,
       "tag": "0004_invoice_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792912572123,
+      "tag": "0005_part_keywords",
+      "breakpoints": true
     }
   ]
 }

@@ -2,12 +2,13 @@ import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { colomboDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
+import { partFilterOptions } from "@/server/cached";
 import { listSuppliers } from "@/server/services/grn";
 import { GrnForm } from "./grn-form";
 
 export default async function NewGrnPage() {
   await requireUser();
-  const suppliers = await listSuppliers({ activeOnly: true });
+  const [suppliers, filters] = await Promise.all([listSuppliers({ activeOnly: true }), partFilterOptions()]);
 
   return (
     <div>
@@ -24,7 +25,7 @@ export default async function NewGrnPage() {
           page.
         </p>
       ) : (
-        <GrnForm suppliers={suppliers} today={colomboDate()} />
+        <GrnForm suppliers={suppliers} today={colomboDate()} filters={filters} />
       )}
     </div>
   );

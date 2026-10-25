@@ -22,6 +22,7 @@ import { DomainError, NotFound } from "@/server/errors";
 export const partInputSchema = z.object({
   sku: z.string().trim().min(1, "SKU is required").max(40),
   name: z.string().trim().min(1, "Name is required").max(200),
+  keywords: optionalText(300),
   oemPartNo: optionalText(60),
   barcode: optionalText(60),
   categoryId: optionalId,
@@ -74,6 +75,7 @@ export type PartDetail = {
   oemPartNo: string | null;
   barcode: string | null;
   name: string;
+  keywords: string | null;
   categoryId: string | null;
   categoryName: string | null;
   brandId: string | null;
@@ -177,7 +179,8 @@ export async function updatePart(user: SessionUser, id: string, input: PartInput
 
 /**
  * Part search for lists and billing. Exact SKU/barcode/OEM matches first, then SKU/OEM prefix,
- * then name matches (substring or trigram word similarity). Rows never include cost.
+ * then name or keyword matches (substring or trigram word similarity). An empty query with a
+ * filter browses it. Rows never include cost.
  */
 export async function searchParts(
   q: string,
@@ -201,6 +204,8 @@ export async function searchParts(
       or lower(${parts.barcode}) = lower(${term})
       or ${parts.name} ilike ${contains}
       or ${term} <% ${parts.name}
+      or ${parts.keywords} ilike ${contains}
+      or ${term} <% ${parts.keywords}
     )`);
   }
   if (opts.vehicleModelId) {
@@ -221,7 +226,7 @@ export async function searchParts(
             or lower(coalesce(${parts.oemPartNo}, '')) = lower(${term}) then 0
           when ${parts.sku} ilike ${prefix} or ${parts.oemPartNo} ilike ${prefix} then 1
           else 2 end`,
-        desc(sql`word_similarity(${term}, ${parts.name})`),
+        desc(sql`greatest(word_similarity(${term}, ${parts.name}), coalesce(word_similarity(${term}, ${parts.keywords}), 0))`),
         asc(parts.sku),
       ]
     : [asc(parts.sku)];
@@ -258,6 +263,7 @@ export async function getPart(user: SessionUser, id: string): Promise<PartDetail
       oemPartNo: parts.oemPartNo,
       barcode: parts.barcode,
       name: parts.name,
+      keywords: parts.keywords,
       categoryId: parts.categoryId,
       categoryName: categories.name,
       brandId: parts.brandId,

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { InvoiceEditor } from "@/components/billing/invoice-editor";
 import { PageHeader } from "@/components/page-header";
 import { requireUser } from "@/server/auth";
+import { partFilterOptions } from "@/server/cached";
 import { db } from "@/server/db/client";
 import { customers } from "@/server/db/schema";
 import { getCustomer, type CustomerRow } from "@/server/services/customers";
@@ -16,10 +17,11 @@ export default async function NewInvoicePage({
 }) {
   const user = await requireUser();
   const { customerId, draft: draftId } = await searchParams;
-  const [settings, draft, drafts] = await Promise.all([
+  const [settings, draft, drafts, filters] = await Promise.all([
     getSettings(),
     draftId ? getInvoiceDraftForEditor(draftId) : null,
     listInvoiceDrafts({ excludeId: draftId }),
+    partFilterOptions(),
   ]);
 
   let customer: CustomerRow | null = draft?.customer.isActive ? draft.customer : null;
@@ -40,6 +42,7 @@ export default async function NewInvoicePage({
         key={draft?.id ?? "new"}
         initialCustomer={customer}
         draft={draft ?? undefined}
+        partFilters={filters}
         isAdmin={user.role === "admin"}
         vatRate={settings.vatEnabled ? settings.vatRate : "0"}
         staffCapPct={settings.staffMaxDiscountPct}

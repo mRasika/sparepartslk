@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { LineItemsGrid, type GridLine } from "@/components/forms/line-items-grid";
+import type { PartFilterOptions } from "@/components/forms/part-picker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,6 +43,7 @@ const NO_DISCOUNT: DiscountState = { type: "percent", value: "" };
 export function InvoiceEditor({
   initialCustomer,
   draft,
+  partFilters,
   isAdmin,
   vatRate,
   staffCapPct,
@@ -49,6 +51,7 @@ export function InvoiceEditor({
   initialCustomer: PickedCustomer;
   /** Reopened draft; its customer is `initialCustomer`. */
   draft?: Omit<EditorDraft, "customer">;
+  partFilters: PartFilterOptions;
   isAdmin: boolean;
   vatRate: string;
   staffCapPct: string;
@@ -244,6 +247,7 @@ export function InvoiceEditor({
           onChange={setLines}
           pickerInputRef={pickerRef}
           pickerCustomerId={customer.id}
+          pickerFilters={partFilters}
           pickerMeta={(p) =>
             p.price ? (
               <div className="font-medium">Rs {formatMoney(p.price)}</div>
