@@ -121,6 +121,22 @@ describe("sales targets", () => {
     });
   });
 
+  it("takes cash refunds off the money collected", async () => {
+    const part = await makePart({ qty: 50 });
+    const cash = await sell({ paymentType: "cash", lines: [{ partId: part.id, qty: 2 }] });
+    const [item] = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, cash.id));
+    await createReturn(admin, {
+      invoiceId: cash.id,
+      reason: "Wrong part",
+      lines: [{ invoiceItemId: item.id, qty: 1, restock: true }],
+      refund: { method: "cash" },
+    });
+
+    const { day } = await getDailyTargetReport(admin, today);
+    expect(day.netSales).toBe("1000.00");
+    expect(day.collected).toBe("1000.00");
+  });
+
   it("compares with the same weekday last week", async () => {
     const part = await makePart({ qty: 50 });
     await sell({ invoiceDate: addDays(today, -7), lines: [{ partId: part.id, qty: 3 }] });

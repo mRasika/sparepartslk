@@ -130,6 +130,26 @@ describe("monthPlan", () => {
     expect(p.needPerDay).toBeNull();
   });
 
+  it("ends the month on the report date when every later day is closed", () => {
+    const closedDays = ["2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30", "2026-10-31"];
+    const inProgress = plan({ closedDays, dailySales: { [T]: "100000.00" } });
+    expect(inProgress.tradingDaysLeft).toBe(0);
+    expect(inProgress.outcome).toBe("open");
+    expect(inProgress.needPerDay).toBeNull();
+
+    const hitButShort = plan({ closedDays, dailySales: { [T]: "300000.00" } });
+    expect(status(hitButShort, T)).toBe("hit");
+    expect(hitButShort.outcome).toBe("missed");
+  });
+
+  it("handles negative sales on a day of returns", () => {
+    const p = plan({ dailySales: { [T]: "-5000.00" } });
+    expect(status(p, T)).toBe("in-progress");
+    expect(p.mtd).toBe("-5000.00");
+    expect(p.needPerDay).toBe("1351000.00");
+    expect(percentOf(p.mtd, p.monthTarget)).toBe(0);
+  });
+
   it("skips closed dates in the month target", () => {
     expect(plan({ closedDays: ["2026-10-30"] }).monthTarget).toBe("6500000.00");
   });
