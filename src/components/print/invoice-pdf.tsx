@@ -26,6 +26,8 @@ const s = StyleSheet.create({
   totalRow: { flexDirection: "row", justifyContent: "space-between", width: 190, paddingVertical: 2 },
   grand: { fontSize: 12, fontFamily: "Helvetica-Bold", borderTop: "1pt solid #111", marginTop: 3, paddingTop: 4 },
   footer: { flexDirection: "row", justifyContent: "space-between", marginTop: 50 },
+  foot: { marginTop: 16 },
+  note: { marginTop: 4 },
   sign: { width: 190, borderTop: "0.8pt solid #111", paddingTop: 3, textAlign: "center" },
   watermark: {
     position: "absolute",
@@ -41,6 +43,7 @@ const s = StyleSheet.create({
 
 /** The A4 invoice as a PDF, from the same data as the print page. */
 export function InvoicePdf({ data }: { data: InvoicePrintData }) {
+  const quote = data.kind === "quotation";
   const vatOn = Number(data.vatRate) > 0;
   return (
     <Document title={data.number} author={data.business.name}>
@@ -57,16 +60,18 @@ export function InvoicePdf({ data }: { data: InvoicePrintData }) {
             <Text style={s.title}>{data.title}</Text>
             <Meta label="No" value={data.number} />
             <Meta label="Date" value={formatDate(data.date)} />
-            {data.paymentType === "credit" ? <Meta label="Due" value={formatDate(data.dueDate)} /> : null}
-            <Meta label="Payment" value={data.paymentType === "cash" ? "Cash" : "Credit"} />
+            {quote && data.validUntil ? <Meta label="Valid until" value={formatDate(data.validUntil)} /> : null}
+            {!quote && data.paymentType === "credit" ? <Meta label="Due" value={formatDate(data.dueDate)} /> : null}
+            {!quote ? <Meta label="Payment" value={data.paymentType === "cash" ? "Cash" : "Credit"} /> : null}
           </View>
         </View>
 
         <View style={s.billTo}>
-          <Text style={s.small}>Bill to</Text>
+          <Text style={s.small}>{quote ? "Quotation for" : "Bill to"}</Text>
           <Text style={s.bold}>{data.customer.name}</Text>
           {data.customer.businessName ? <Text>{data.customer.businessName}</Text> : null}
           {data.customer.address ? <Text>{data.customer.address}</Text> : null}
+          {quote && data.customer.phone ? <Text>{data.customer.phone}</Text> : null}
           {vatOn || data.customer.tin ? <Text>TIN: {data.customer.tin || "Not provided"}</Text> : null}
         </View>
 
@@ -92,7 +97,7 @@ export function InvoicePdf({ data }: { data: InvoicePrintData }) {
         ))}
 
         <View style={s.totals} wrap={false}>
-          <Text style={s.words}>{data.amountInWords}</Text>
+          {quote ? <View style={s.words} /> : <Text style={s.words}>{data.amountInWords}</Text>}
           <View>
             <Row label="Subtotal" value={formatMoney(data.subtotal)} />
             {data.invoiceDiscount !== "0.00" ? <Row label="Discount" value={`-${formatMoney(data.invoiceDiscount)}`} /> : null}
@@ -104,9 +109,16 @@ export function InvoicePdf({ data }: { data: InvoicePrintData }) {
           </View>
         </View>
 
+        {quote ? (
+          <View style={s.foot} wrap={false}>
+            {data.validUntil ? <Text>Prices valid until {formatDate(data.validUntil)}. Subject to stock availability.</Text> : null}
+            {data.note ? <Text style={s.note}>{data.note}</Text> : null}
+          </View>
+        ) : null}
+
         <View style={s.footer} wrap={false}>
           <Text>Prepared by: {data.preparedBy}</Text>
-          <Text style={s.sign}>Received by (signature and date)</Text>
+          {!quote ? <Text style={s.sign}>Received by (signature and date)</Text> : null}
         </View>
       </Page>
     </Document>
