@@ -1,6 +1,7 @@
 "use client";
 
 import { Printer, ReceiptText, Save } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -18,40 +19,39 @@ import {
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import type { ActionError } from "@/lib/action-result";
-import { formatMoney } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { D, fmt } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { createInvoiceAction, discardInvoiceDraftAction, previewInvoiceAction } from "@/server/actions/invoices";
 import type { EditorDraft } from "@/server/services/invoice-drafts";
 import type { InvoiceInput } from "@/server/services/invoicing";
 import type { Totals } from "@/server/services/pricing";
+import type { QuotationLink } from "@/server/services/quotation-conversion";
 import { CustomerPicker, type PickedCustomer } from "./customer-picker";
 import { DiscountInput } from "./discount-input";
+import { AMOUNT, discountOrUndefined, validDiscount, validQty } from "./line-input";
 import { TotalsPanel, type DiscountState } from "./totals-panel";
 
 type Line = GridLine & { qty: string; discount: DiscountState };
 type Preview = Totals & { prices: Record<string, string>; stock: Record<string, number> };
 type SaveMode = "save" | "a4" | "thermal";
 
-const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
-const validQty = (q: string) => /^\d+$/.test(q.trim()) && Number(q) > 0;
-const discountOrUndefined = (d: DiscountState) =>
-  d.value.trim() === "" || Number(d.value) === 0 ? undefined : { type: d.type, value: d.value.trim() };
-const validDiscount = (d: DiscountState) => d.value.trim() === "" || AMOUNT.test(d.value.trim());
-
 const NO_DISCOUNT: DiscountState = { type: "percent", value: "" };
 
 export function InvoiceEditor({
   initialCustomer,
   draft,
+  quotation,
   partFilters,
   isAdmin,
   vatRate,
   staffCapPct,
 }: {
   initialCustomer: PickedCustomer;
-  /** Reopened draft; its customer is `initialCustomer`. */
-  draft?: Omit<EditorDraft, "customer">;
+  /** Reopened draft, or a quotation being converted (no id yet); its customer is `initialCustomer`. */
+  draft?: Omit<EditorDraft, "customer" | "id" | "quotation"> & { id?: string };
+  /** The quotation this invoice converts; its prices apply on the server. */
+  quotation?: QuotationLink;
   partFilters: PartFilterOptions;
   isAdmin: boolean;
   vatRate: string;
@@ -87,7 +87,7 @@ export function InvoiceEditor({
   // remounts this editor from the saved draft, dropping lines added since. After a reload the draft
   // is first under Unfinished invoices.
   const draftId = useRef<string | null>(draft?.id ?? null);
-  const draftSaved = useRef(Boolean(draft));
+  const draftSaved = useRef(Boolean(draft?.id));
   /** A change the server hasn't seen yet (or can't: half-typed lines). */
   const dirty = useRef(false);
   const saving = useRef(false);
@@ -104,8 +104,9 @@ export function InvoiceEditor({
       overrideCreditLimit: overrideCreditLimit || undefined,
       cashPayment: paymentType === "cash" ? { method, reference: reference.trim() || undefined } : undefined,
       draftId: draftId.current ?? undefined,
+      quotationId: quotation?.id,
     }),
-    [customer.id, paymentType, lines, invoiceDiscount, method, reference],
+    [customer.id, paymentType, lines, invoiceDiscount, method, reference, quotation?.id],
   );
 
   // Live prices and totals from the server, so the screen always matches what will be saved.
@@ -280,6 +281,34 @@ export function InvoiceEditor({
             </div>
           </fieldset>
         </div>
+
+        {quotation && (
+          <div className="grid gap-2 rounded-lg border bg-card p-3 text-sm">
+            <p>
+              From quotation{" "}
+              <Link href={`/quotations/${quotation.id}`} className="font-medium hover:underline">
+                {quotation.number}
+              </Link>
+              <span className="text-muted-foreground">
+                {" · "}Quoted as {quotation.paymentType}
+              </span>
+            </p>
+            {quotation.expired && quotation.priceChanges.length > 0 && (
+              <div role="status" className="rounded-md border border-warning/40 bg-warning/10 p-2">
+                <p>
+                  {quotation.number} expired on {formatDate(quotation.validUntil)}. Today&apos;s prices are used:
+                </p>
+                <ul className="mt-1 tabular-nums">
+                  {quotation.priceChanges.map((c) => (
+                    <li key={c.sku}>
+                      {c.sku}: Rs {formatMoney(c.quoted)} → Rs {formatMoney(c.current)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
 
         <LineItemsGrid<Line>
           lines={lines}

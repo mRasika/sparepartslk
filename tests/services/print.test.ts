@@ -6,7 +6,8 @@ import type { SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
 import { customers, invoices, settings } from "@/server/db/schema";
 import { createInvoice } from "@/server/services/invoicing";
-import { getInvoicePrintData } from "@/server/services/print";
+import { cancelQuotation, createQuotation, getQuotation } from "@/server/services/quotations";
+import { getInvoicePrintData, getQuotationPrintData } from "@/server/services/print";
 import { resetDb } from "../helpers/db";
 import { makeCustomer, makePart, makeUser } from "../helpers/factories";
 
@@ -30,6 +31,7 @@ describe("getInvoicePrintData", () => {
     await db.update(settings).set({ vatEnabled: true, vatRate: "18.00" });
     const inv = await sell();
     const data = await getInvoicePrintData(staff, inv.id);
+    expect(data.kind).toBe("invoice");
     expect(data.title).toBe("TAX INVOICE");
     expect(data.customer.tin).toBe("114567890");
     expect(data.business.tin).toBe("409876543");
@@ -61,5 +63,58 @@ describe("getInvoicePrintData", () => {
     await db.update(invoices).set({ status: "cancelled" }).where(eq(invoices.id, inv.id));
     const data = await getInvoicePrintData(staff, inv.id);
     expect(data.status).toBe("cancelled");
+  });
+});
+
+describe("getQuotationPrintData", () => {
+  async function quote() {
+    const [walkIn] = await db.select().from(customers).where(eq(customers.isWalkIn, true));
+    const part = await makePart({ sku: "CHN-428", name: "Chain Kit 428H", qty: 5 });
+    return createQuotation(staff, {
+      customerId: walkIn.id,
+      paymentType: "cash",
+      lines: [{ partId: part.id, qty: 2 }],
+      invoiceDiscount: undefined,
+      quoteForName: "Nimal Perera",
+      quoteForPhone: "0771234567",
+      note: "Fits CD70",
+    });
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+    staff = await makeUser("staff", { fullName: "Dilani" });
+    await db.update(settings).set({ businessName: "Sparepartslk" });
+  });
+
+  it("prints a quotation", async () => {
+    const { id, number } = await quote();
+    const q = await getQuotation(id);
+    const data = await getQuotationPrintData(id);
+    expect(data).toMatchObject({
+      kind: "quotation",
+      title: "QUOTATION",
+      number,
+      status: "issued",
+      validUntil: q.validUntil,
+      note: "Fits CD70",
+      amountInWords: "",
+      preparedBy: "Dilani",
+    });
+    expect(data.customer).toMatchObject({ name: "Nimal Perera", phone: "0771234567" });
+    expect(data.lines[0]).toMatchObject({ sku: "CHN-428", qty: 2 });
+  });
+
+  it("marks a cancelled quotation", async () => {
+    const { id } = await quote();
+    await cancelQuotation(staff, id, "Customer changed mind");
+    expect((await getQuotationPrintData(id)).status).toBe("cancelled");
+  });
+
+  it("renders the quotation PDF", async () => {
+    const { id } = await quote();
+    const data = await getQuotationPrintData(id);
+    const buffer = await renderToBuffer(InvoicePdf({ data }));
+    expect(buffer.length).toBeGreaterThan(1000);
   });
 });

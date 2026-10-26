@@ -73,6 +73,15 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         }
       />
 
+      {inv.quotation && (
+        <p className="-mt-3 mb-6 text-sm text-muted-foreground">
+          From quotation{" "}
+          <Link href={`/quotations/${inv.quotation.id}`} className="font-medium text-foreground hover:underline">
+            {inv.quotation.number}
+          </Link>
+        </p>
+      )}
+
       {!cancelled && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
           <p className="text-sm">

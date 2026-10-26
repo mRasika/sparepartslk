@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   Boxes,
+  FileSignature,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -33,6 +34,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { href: "/invoices", label: "Invoices", icon: FileText },
+      { href: "/quotations", label: "Quotations", icon: FileSignature },
       { href: "/returns", label: "Returns", icon: Undo2 },
       { href: "/payments", label: "Payments", icon: Wallet },
       { href: "/customers", label: "Customers", icon: Users },
