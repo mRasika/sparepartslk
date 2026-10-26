@@ -7,6 +7,7 @@ import { customers, invoiceDrafts, parts, profiles } from "@/server/db/schema";
 import { getCustomer, type CustomerRow } from "@/server/services/customers";
 import { invoiceInputSchema, previewInvoice, type InvoiceInput } from "@/server/services/invoicing";
 import { lookupPrices } from "@/server/services/pricing";
+import { getQuotationForInvoice, type QuotationLink } from "@/server/services/quotation-conversion";
 
 /** Drafts nobody has touched for this long are deleted the next time the list is read. */
 const DRAFT_TTL = sql`interval '7 days'`;
@@ -95,9 +96,15 @@ export type EditorDraft = {
   }[];
   invoiceDiscount?: { type: "amount" | "percent"; value: string };
   cashPayment?: { method: "cash" | "bank" | "cheque"; reference?: string };
+  /** Set while the invoice converts a quotation that can still be converted. */
+  quotation?: QuotationLink;
 };
 
-/** A draft ready to reopen in the editor: today's stock and the customer's current prices. */
+/**
+ * A draft ready to reopen in the editor: today's stock and the customer's current prices, except
+ * parts on a still-valid quotation it converts, which keep their quoted price. A quotation that was
+ * converted or cancelled meanwhile is dropped from the view; issuing then fails with its reason.
+ */
 export async function getInvoiceDraftForEditor(id: string): Promise<EditorDraft | null> {
   if (!z.uuid().safeParse(id).success) return null;
   const [draft] = await db.select().from(invoiceDrafts).where(eq(invoiceDrafts.id, id));
@@ -105,7 +112,7 @@ export async function getInvoiceDraftForEditor(id: string): Promise<EditorDraft 
 
   const customer = await getCustomer(draft.customerId);
   const partIds = draft.data.lines.map((l) => l.partId);
-  const [partRows, prices] = await Promise.all([
+  const [partRows, prices, fromQuote] = await Promise.all([
     partIds.length
       ? db
           .select({
@@ -120,8 +127,12 @@ export async function getInvoiceDraftForEditor(id: string): Promise<EditorDraft 
           .where(inArray(parts.id, partIds))
       : [],
     lookupPrices(db, customer.tierId, partIds),
+    draft.data.quotationId ? getQuotationForInvoice(draft.data.quotationId) : null,
   ]);
   const byId = new Map(partRows.map((p) => [p.id, p]));
+  if (fromQuote && !fromQuote.quotation.expired) {
+    for (const { part } of fromQuote.lines) if (part.price) prices.set(part.id, part.price);
+  }
 
   return {
     id: draft.id,
@@ -132,5 +143,6 @@ export async function getInvoiceDraftForEditor(id: string): Promise<EditorDraft 
       .map((l) => ({ part: { ...byId.get(l.partId)!, price: prices.get(l.partId) }, qty: l.qty, discount: l.discount })),
     invoiceDiscount: draft.data.invoiceDiscount,
     cashPayment: draft.data.cashPayment,
+    quotation: fromQuote?.quotation,
   };
 }
