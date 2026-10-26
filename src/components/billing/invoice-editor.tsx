@@ -27,17 +27,12 @@ import type { InvoiceInput } from "@/server/services/invoicing";
 import type { Totals } from "@/server/services/pricing";
 import { CustomerPicker, type PickedCustomer } from "./customer-picker";
 import { DiscountInput } from "./discount-input";
+import { AMOUNT, discountOrUndefined, validDiscount, validQty } from "./line-input";
 import { TotalsPanel, type DiscountState } from "./totals-panel";
 
 type Line = GridLine & { qty: string; discount: DiscountState };
 type Preview = Totals & { prices: Record<string, string>; stock: Record<string, number> };
 type SaveMode = "save" | "a4" | "thermal";
-
-const AMOUNT = /^\d{1,10}(\.\d{1,2})?$/;
-const validQty = (q: string) => /^\d+$/.test(q.trim()) && Number(q) > 0;
-const discountOrUndefined = (d: DiscountState) =>
-  d.value.trim() === "" || Number(d.value) === 0 ? undefined : { type: d.type, value: d.value.trim() };
-const validDiscount = (d: DiscountState) => d.value.trim() === "" || AMOUNT.test(d.value.trim());
 
 const NO_DISCOUNT: DiscountState = { type: "percent", value: "" };
 
