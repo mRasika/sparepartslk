@@ -150,14 +150,14 @@ function Bar({ pct, pace, label, tone }: { pct: number; pace?: number; label: st
       aria-valuenow={pct}
       aria-valuemin={0}
       aria-valuemax={100}
-      className="relative h-2.5 overflow-hidden rounded-full bg-muted"
+      className="relative h-2.5 rounded-full bg-muted"
     >
       <div
         className={cn("h-full rounded-full", tone === "success" ? "bg-success" : "bg-primary")}
         style={{ width: `${Math.min(pct, 100)}%` }}
       />
       {pace !== undefined && pace > 0 && pace < 100 && (
-        <div aria-hidden className="absolute inset-y-0 w-0.5 bg-foreground/60" style={{ left: `${pace}%` }} />
+        <div aria-hidden className="absolute -inset-y-1 w-1 rounded-full bg-warning" style={{ left: `${pace}%` }} />
       )}
     </div>
   );
@@ -166,10 +166,10 @@ function Bar({ pct, pace, label, tone }: { pct: number; pace?: number; label: st
 const SQUARE: Record<DayStatus, string> = {
   hit: "bg-success",
   missed: "bg-destructive",
-  "in-progress": "bg-muted",
+  "in-progress": "bg-muted-foreground/30",
   upcoming: "border border-border",
-  closed: "bg-muted",
-  "no-target": "bg-muted",
+  closed: "bg-muted-foreground/30",
+  "no-target": "bg-muted-foreground/30",
 };
 
 const WORDS: Record<DayStatus, string> = {
@@ -210,7 +210,8 @@ function DaySquares({ days, today }: { days: PlanDay[]; today: string }) {
         <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <Legend className="bg-success" text="Hit" />
           <Legend className="bg-destructive" text="Missed" />
-          <Legend className="bg-muted" text="Closed or no target" />
+          <Legend className="bg-muted-foreground/30" text="Closed or no target" />
+          <Legend className="bg-warning" text="Where sales should be today" />
           <Legend className="border border-border" text="To come" />
         </p>
       </div>
