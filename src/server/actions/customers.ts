@@ -3,11 +3,25 @@
 import { revalidatePath } from "next/cache";
 import { runAction } from "@/lib/action-result";
 import { requireUser } from "@/server/auth";
-import { createCustomer, updateCustomer, type CustomerInput } from "@/server/services/customers";
+import {
+  createCustomer,
+  quickAddCustomer,
+  updateCustomer,
+  type CustomerInput,
+  type QuickAddCustomerInput,
+} from "@/server/services/customers";
 
 export async function createCustomerAction(input: CustomerInput) {
   return runAction(async () => {
     const result = await createCustomer(await requireUser(), input);
+    revalidatePath("/customers");
+    return result;
+  });
+}
+
+export async function quickAddCustomerAction(input: QuickAddCustomerInput) {
+  return runAction(async () => {
+    const result = await quickAddCustomer(await requireUser(), input);
     revalidatePath("/customers");
     return result;
   });

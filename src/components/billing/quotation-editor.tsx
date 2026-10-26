@@ -213,7 +213,7 @@ export function QuotationEditor({
     >
       <div className="grid min-w-0 content-start gap-4">
         <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
-          <CustomerPicker value={customer} onChange={changeCustomer} />
+          <CustomerPicker value={customer} onChange={changeCustomer} allowAdd />
           <fieldset className="grid content-start gap-1.5">
             <legend className="mb-1.5 text-sm font-medium">Payment</legend>
             <div className="inline-flex rounded-lg border bg-card p-0.5" role="radiogroup" aria-label="Payment">
