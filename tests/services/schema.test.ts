@@ -2,11 +2,13 @@ import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db/client";
 import {
+  closedDays,
   customers,
   parts,
   priceTiers,
   quotationItems,
   quotations,
+  salesTargets,
   settings,
 } from "@/server/db/schema";
 import { pgErrorCode, resetDb } from "../helpers/db";
@@ -149,5 +151,46 @@ describe("quotations", () => {
     });
     await db.delete(quotations).where(eq(quotations.id, q.id));
     expect(await db.$count(quotationItems)).toBe(0);
+  });
+});
+
+describe("sales targets", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  async function insertTarget(overrides: Partial<typeof salesTargets.$inferInsert> = {}) {
+    const admin = await factoryAdmin();
+    return db.insert(salesTargets).values({
+      effectiveFrom: "2026-10-01",
+      dailyTarget: "250000.00",
+      closedWeekdays: [7],
+      createdBy: admin.id,
+      ...overrides,
+    });
+  }
+
+  it("rejects a zero target", async () => {
+    expect(await pgErrorCode(insertTarget({ dailyTarget: "0.00" }))).toBe("23514");
+  });
+
+  it("rejects all seven weekdays closed", async () => {
+    expect(await pgErrorCode(insertTarget({ closedWeekdays: [1, 2, 3, 4, 5, 6, 7] }))).toBe("23514");
+  });
+
+  it("rejects weekday 8", async () => {
+    expect(await pgErrorCode(insertTarget({ closedWeekdays: [8] }))).toBe("23514");
+  });
+
+  it("allows one target per day", async () => {
+    await insertTarget();
+    expect(await pgErrorCode(insertTarget({ dailyTarget: "300000.00" }))).toBe("23505");
+  });
+
+  it("allows one closed row per date", async () => {
+    const admin = await factoryAdmin();
+    const close = () => db.insert(closedDays).values({ day: "2026-10-30", reason: "Poya", createdBy: admin.id });
+    await close();
+    expect(await pgErrorCode(close())).toBe("23505");
   });
 });
