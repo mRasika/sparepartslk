@@ -15,6 +15,7 @@ import {
   salesReturns,
 } from "@/server/db/schema";
 import { Forbidden, InvalidState, NotFound } from "@/server/errors";
+import { getSettings } from "@/server/services/settings";
 
 export const customerInputSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
@@ -213,6 +214,32 @@ export async function createCustomer(user: SessionUser, input: CustomerInput): P
   }
   const [row] = await db.insert(customers).values(data).returning({ id: customers.id });
   return row;
+}
+
+export const quickAddCustomerSchema = customerInputSchema.pick({
+  name: true,
+  phone: true,
+  businessName: true,
+  address: true,
+});
+
+export type QuickAddCustomerInput = z.input<typeof quickAddCustomerSchema>;
+
+/**
+ * Adds a customer from the invoice or quotation editor's picker: cash only, on the default tier,
+ * so staff and admin get the same. Credit and tier are set later on the customer's page.
+ */
+export async function quickAddCustomer(user: SessionUser, input: QuickAddCustomerInput): Promise<CustomerRow> {
+  const contact = quickAddCustomerSchema.parse(input);
+  const [tierId, settings] = await Promise.all([defaultTierId(), getSettings()]);
+  const { id } = await createCustomer(user, {
+    ...contact,
+    tierId,
+    creditLimit: "0.00",
+    creditDays: settings.defaultCreditDays,
+    isActive: true,
+  });
+  return getCustomer(id);
 }
 
 /** Staff may edit contact details; tier and credit terms are admin-only. */

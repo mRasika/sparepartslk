@@ -4,7 +4,8 @@ import type { SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
 import { customers } from "@/server/db/schema";
 import { Forbidden, InvalidState } from "@/server/errors";
-import { createCustomer, updateCustomer, type CustomerInput } from "@/server/services/customers";
+import { ZodError } from "zod";
+import { createCustomer, quickAddCustomer, updateCustomer, type CustomerInput } from "@/server/services/customers";
 import { resetDb } from "../helpers/db";
 import { makeCustomer, makeUser, tierIds } from "../helpers/factories";
 
@@ -95,5 +96,38 @@ describe("customers", () => {
     await expect(updateCustomer(admin, walkIn.id, { ...base, isActive: false })).rejects.toBeInstanceOf(
       InvalidState,
     );
+  });
+
+  describe("quick add from the invoice and quotation editors", () => {
+    it("adds a cash customer on the default tier for staff and admin", async () => {
+      const tiers = await tierIds();
+      for (const user of [staff, admin]) {
+        const row = await quickAddCustomer(user, { name: "  Nimal Perera ", phone: "071 555 0101" });
+        expect(row).toMatchObject({
+          name: "Nimal Perera",
+          phone: "071 555 0101",
+          businessName: null,
+          tierId: tiers.Retail,
+          tierName: "Retail",
+          creditLimit: "0.00",
+          isWalkIn: false,
+          isActive: true,
+        });
+      }
+    });
+
+    it("keeps the business name and address", async () => {
+      const row = await quickAddCustomer(staff, {
+        name: "Kamal",
+        businessName: "Kamal Auto",
+        address: "12 Galle Road",
+        phone: "",
+      });
+      expect(row).toMatchObject({ businessName: "Kamal Auto", address: "12 Galle Road", phone: null });
+    });
+
+    it("refuses an empty name", async () => {
+      await expect(quickAddCustomer(staff, { name: "  " })).rejects.toBeInstanceOf(ZodError);
+    });
   });
 });

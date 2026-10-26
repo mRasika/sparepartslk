@@ -1,29 +1,36 @@
 "use client";
 
-import { UserRound } from "lucide-react";
+import { UserRound, UserRoundPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui/command";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { CustomerRow } from "@/server/services/customers";
+import { prefillFrom, QuickAddCustomerDialog, type QuickAddPrefill } from "./quick-add-customer-dialog";
 
 export type PickedCustomer = Pick<
   CustomerRow,
   "id" | "name" | "businessName" | "phone" | "tierName" | "creditLimit" | "creditDays" | "isWalkIn"
 >;
 
-/** Shows the chosen customer; typing searches active customers (name, business or phone). */
+/**
+ * Shows the chosen customer; typing searches active customers (name, business or phone). With
+ * `allowAdd`, the list ends with "Add … as a new customer", which adds and picks a cash customer.
+ */
 export function CustomerPicker({
   value,
   onChange,
+  allowAdd = false,
 }: {
   value: PickedCustomer | null;
   onChange: (c: PickedCustomer) => void;
+  allowAdd?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PickedCustomer[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState<QuickAddPrefill | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -50,6 +57,16 @@ export function CustomerPicker({
       controller.abort();
     };
   }, [query, open]);
+
+  const typed = query.trim();
+  const canAdd = allowAdd && typed !== "" && !loading;
+
+  function pick(c: PickedCustomer) {
+    // Blur our own input first; onChange may move focus elsewhere (e.g. the part finder).
+    inputRef.current?.blur();
+    setOpen(false);
+    onChange(c);
+  }
 
   return (
     <div className="grid gap-1.5">
@@ -87,17 +104,16 @@ export function CustomerPicker({
           ) : (
             !loading && <CommandEmpty>No active customer matches.</CommandEmpty>
           )}
+          {/* CommandEmpty hides once the add row is there; keep saying nothing matched. */}
+          {canAdd && results.length === 0 && (
+            <div className="px-3 pt-3 pb-1 text-sm text-muted-foreground">No active customer matches.</div>
+          )}
           {results.map((c) => (
             <CommandItem
               key={c.id}
               value={c.id}
               onMouseDown={(e) => e.preventDefault()}
-              onSelect={() => {
-                // Blur our own input first; onChange may move focus elsewhere (e.g. the part finder).
-                inputRef.current?.blur();
-                setOpen(false);
-                onChange(c);
-              }}
+              onSelect={() => pick(c)}
               className="flex justify-between gap-3 px-3 py-2"
             >
               <div className="min-w-0">
@@ -112,8 +128,33 @@ export function CustomerPicker({
               </div>
             </CommandItem>
           ))}
+          {canAdd && (
+            <CommandItem
+              value="__add__"
+              onMouseDown={(e) => e.preventDefault()}
+              onSelect={() => {
+                inputRef.current?.blur();
+                setOpen(false);
+                setAdding(prefillFrom(typed));
+              }}
+              className="gap-2 border-t px-3 py-2 font-medium"
+            >
+              <UserRoundPlus className="size-4" />
+              Add “{typed}” as a new customer
+            </CommandItem>
+          )}
         </CommandList>
       </Command>
+      {allowAdd && (
+        <QuickAddCustomerDialog
+          prefill={adding}
+          onClose={() => setAdding(null)}
+          onAdded={(c) => {
+            setAdding(null);
+            onChange(c);
+          }}
+        />
+      )}
       {value && (
         <p className="text-xs text-muted-foreground">
           {value.tierName} prices
