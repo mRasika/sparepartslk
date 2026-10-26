@@ -10,6 +10,8 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { parts } from "./catalog";
@@ -23,6 +25,7 @@ import {
   paymentTypeEnum,
   priceTiers,
   profiles,
+  quotationStatusEnum,
 } from "./reference";
 
 export const grns = pgTable("grns", {
@@ -96,6 +99,8 @@ export const invoices = pgTable(
 export type InvoiceDraftData = {
   lines: { partId: string; qty: number; discount?: { type: "amount" | "percent"; value: string } }[];
   invoiceDiscount?: { type: "amount" | "percent"; value: string };
+  /** Set when the draft came from a quotation, so issuing it can mark the quotation converted. */
+  quotationId?: string;
   cashPayment?: { method: "cash" | "bank" | "cheque"; reference?: string };
 };
 
@@ -146,6 +151,107 @@ export const invoiceItems = pgTable(
     check("invoice_items_qty_positive", sql`${t.qty} > 0`),
     index("invoice_items_invoice_idx").on(t.invoiceId),
     index("invoice_items_part_idx").on(t.partId),
+  ],
+);
+
+/**
+ * Priced offers to a customer. They never touch stock or balances; converting one issues an invoice
+ * through createInvoice.
+ */
+export const quotations = pgTable(
+  "quotations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    number: text("number").notNull().unique(),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    /** Who the quote is for when the customer is the walk-in; null for any other customer. */
+    quoteForName: text("quote_for_name"),
+    quoteForPhone: text("quote_for_phone"),
+    quotationDate: date("quotation_date", { mode: "string" }).notNull(),
+    validUntil: date("valid_until", { mode: "string" }).notNull(),
+    paymentType: paymentTypeEnum("payment_type").notNull(),
+    tierId: uuid("tier_id")
+      .notNull()
+      .references(() => priceTiers.id),
+    vatRate: numeric("vat_rate", { precision: 5, scale: 2, mode: "string" }).notNull(),
+    subtotal: money("subtotal").notNull(),
+    /** Invoice-level discount (line discounts are already inside subtotal). */
+    discountTotal: money("discount_total").notNull(),
+    vatAmount: money("vat_amount").notNull(),
+    total: money("total").notNull(),
+    invoiceDiscountType: text("invoice_discount_type"),
+    invoiceDiscountValue: numeric("invoice_discount_value", {
+      precision: 12,
+      scale: 2,
+      mode: "string",
+    }),
+    note: text("note"),
+    status: quotationStatusEnum("status").notNull().default("open"),
+    cancelReason: text("cancel_reason"),
+    cancelledBy: uuid("cancelled_by").references(() => profiles.userId),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    /** The invoice this quotation was converted into. */
+    invoiceId: uuid("invoice_id").references(() => invoices.id),
+    convertedBy: uuid("converted_by").references(() => profiles.userId),
+    convertedAt: timestamp("converted_at", { withTimezone: true }),
+    updatedBy: uuid("updated_by")
+      .notNull()
+      .references(() => profiles.userId),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    ...audit(),
+  },
+  (t) => [
+    check("quotations_valid_after_date", sql`${t.validUntil} >= ${t.quotationDate}`),
+    check(
+      "quotations_converted_has_invoice",
+      sql`(${t.status} = 'converted') = (${t.invoiceId} is not null)`,
+    ),
+    check(
+      "quotations_cancelled_has_reason",
+      sql`${t.status} <> 'cancelled' or ${t.cancelReason} is not null`,
+    ),
+    check(
+      "quotations_discount_pair",
+      sql`(${t.invoiceDiscountType} is null) = (${t.invoiceDiscountValue} is null) and (${t.invoiceDiscountType} is null or ${t.invoiceDiscountType} in ('amount', 'percent'))`,
+    ),
+    index("quotations_date_idx").on(t.quotationDate),
+    index("quotations_status_valid_idx").on(t.status, t.validUntil),
+    uniqueIndex("quotations_invoice_idx")
+      .on(t.invoiceId)
+      .where(sql`${t.invoiceId} is not null`),
+  ],
+);
+
+export const quotationItems = pgTable(
+  "quotation_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    quotationId: uuid("quotation_id")
+      .notNull()
+      .references(() => quotations.id, { onDelete: "cascade" }),
+    lineNo: integer("line_no").notNull(),
+    partId: uuid("part_id")
+      .notNull()
+      .references(() => parts.id),
+    description: text("description").notNull(),
+    qty: integer("qty").notNull(),
+    unitPrice: money("unit_price").notNull(),
+    discountType: text("discount_type"),
+    discountValue: numeric("discount_value", { precision: 12, scale: 2, mode: "string" }),
+    discount: money("discount").notNull().default("0.00"),
+    lineTotal: money("line_total").notNull(),
+  },
+  (t) => [
+    check("quotation_items_qty_positive", sql`${t.qty} > 0`),
+    check("quotation_items_price_non_negative", sql`${t.unitPrice} >= 0`),
+    check(
+      "quotation_items_discount_pair",
+      sql`(${t.discountType} is null) = (${t.discountValue} is null) and (${t.discountType} is null or ${t.discountType} in ('amount', 'percent'))`,
+    ),
+    unique("quotation_items_quotation_line_unique").on(t.quotationId, t.lineNo),
+    index("quotation_items_quotation_idx").on(t.quotationId),
   ],
 );
 

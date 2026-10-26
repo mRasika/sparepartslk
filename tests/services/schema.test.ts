@@ -1,8 +1,16 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db/client";
-import { customers, parts, priceTiers, settings } from "@/server/db/schema";
+import {
+  customers,
+  parts,
+  priceTiers,
+  quotationItems,
+  quotations,
+  settings,
+} from "@/server/db/schema";
 import { pgErrorCode, resetDb } from "../helpers/db";
+import { factoryAdmin, makePart, tierIds } from "../helpers/factories";
 
 async function insertPart(sku: string, qty = 0) {
   const [row] = await db
@@ -59,5 +67,87 @@ describe("schema", () => {
       sql`select public.reconcile_stock() as n`,
     );
     expect(second[0].n).toBe(0);
+  });
+});
+
+describe("quotations", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  async function insertQuotation(overrides: Partial<typeof quotations.$inferInsert> = {}) {
+    const admin = await factoryAdmin();
+    const [walkIn] = await db.select().from(customers).where(eq(customers.isWalkIn, true));
+    const tiers = await tierIds();
+    const [row] = await db
+      .insert(quotations)
+      .values({
+        number: `QUO-2026-${Math.random().toString().slice(2, 8)}`,
+        customerId: walkIn.id,
+        quotationDate: "2026-06-15",
+        validUntil: "2026-06-29",
+        paymentType: "cash",
+        tierId: tiers.Retail,
+        vatRate: "18.00",
+        subtotal: "0.00",
+        discountTotal: "0.00",
+        vatAmount: "0.00",
+        total: "0.00",
+        updatedBy: admin.id,
+        createdBy: admin.id,
+        ...overrides,
+      })
+      .returning();
+    return row;
+  }
+
+  it("rejects a quotation item with qty 0", async () => {
+    const q = await insertQuotation();
+    const part = await makePart();
+    const code = await pgErrorCode(
+      db.insert(quotationItems).values({
+        quotationId: q.id,
+        lineNo: 1,
+        partId: part.id,
+        description: "Part",
+        qty: 0,
+        unitPrice: "10.00",
+        discount: "0.00",
+        lineTotal: "0.00",
+      }),
+    );
+    expect(code).toBe("23514");
+  });
+
+  it("rejects valid_until before quotation_date", async () => {
+    const code = await pgErrorCode(insertQuotation({ validUntil: "2026-06-14" }));
+    expect(code).toBe("23514");
+  });
+
+  it("rejects converted without an invoice", async () => {
+    const code = await pgErrorCode(insertQuotation({ status: "converted", invoiceId: null }));
+    expect(code).toBe("23514");
+  });
+
+  it("rejects cancelled without a reason", async () => {
+    const code = await pgErrorCode(insertQuotation({ status: "cancelled", cancelReason: null }));
+    expect(code).toBe("23514");
+  });
+
+  it("deletes items with their quotation", async () => {
+    const q = await insertQuotation();
+    const part = await makePart();
+    await db.insert(quotationItems).values({
+      quotationId: q.id,
+      lineNo: 1,
+      partId: part.id,
+      description: "Part",
+      qty: 1,
+      unitPrice: "10.00",
+      discount: "0.00",
+      lineTotal: "10.00",
+    });
+    await db.delete(quotations).where(eq(quotations.id, q.id));
+    expect(await db.$count(quotationItems)).toBe(0);
   });
 });

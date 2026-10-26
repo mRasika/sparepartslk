@@ -3,7 +3,7 @@ import { colomboYear } from "@/lib/dates";
 import type { Tx } from "@/server/db/client";
 import { documentSequences, settings } from "@/server/db/schema";
 
-export type DocType = "INV" | "GRN" | "CRN" | "PAY" | "ADJ";
+export type DocType = "INV" | "GRN" | "CRN" | "PAY" | "ADJ" | "QUO";
 
 /**
  * Issues the next gapless document number, e.g. `INV-2026-000123` (or `SP-INV-…` with a prefix).

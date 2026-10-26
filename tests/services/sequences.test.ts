@@ -21,6 +21,13 @@ describe("nextNumber", () => {
     expect(grn).toBe("GRN-2026-000001");
   });
 
+  it("issues QUO numbers", async () => {
+    const first = await db.transaction((tx) => nextNumber(tx, "QUO", IN_2026));
+    const second = await db.transaction((tx) => nextNumber(tx, "QUO", IN_2026));
+    expect(first).toBe("QUO-2026-000001");
+    expect(second).toBe("QUO-2026-000002");
+  });
+
   it("starts a new year from the Colombo-local date", async () => {
     await db.transaction((tx) => nextNumber(tx, "INV", IN_2026));
     const n = await db.transaction((tx) =>

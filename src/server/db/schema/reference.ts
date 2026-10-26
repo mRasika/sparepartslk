@@ -31,7 +31,8 @@ export const adjustmentReasonEnum = pgEnum("adjustment_reason", [
   "lost",
   "other",
 ]);
-export const docTypeEnum = pgEnum("doc_type", ["INV", "GRN", "CRN", "PAY", "ADJ"]);
+export const docTypeEnum = pgEnum("doc_type", ["INV", "GRN", "CRN", "PAY", "ADJ", "QUO"]);
+export const quotationStatusEnum = pgEnum("quotation_status", ["open", "converted", "cancelled"]);
 
 /** One row per auth user. No FK to auth.users so the schema works on a plain Postgres test DB. */
 export const profiles = pgTable("profiles", {
