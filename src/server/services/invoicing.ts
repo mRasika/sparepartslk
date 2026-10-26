@@ -5,7 +5,7 @@ import { D } from "@/lib/money";
 import { escapeLike } from "@/lib/sql-text";
 import { discountSchema, saleLinesSchema } from "@/lib/validation";
 import { requireRole, type SessionUser } from "@/server/auth";
-import { db } from "@/server/db/client";
+import { db, type Executor } from "@/server/db/client";
 import {
   customers,
   invoiceDrafts,
@@ -16,6 +16,7 @@ import {
   payments,
   priceTiers,
   profiles,
+  quotations,
   salesReturns,
 } from "@/server/db/schema";
 import {
@@ -34,6 +35,7 @@ import {
   resolvePrices,
   type Totals,
 } from "@/server/services/pricing";
+import { loadQuotationPrices, type QuotationPrices } from "@/server/services/quotation-conversion";
 import { nextNumber } from "@/server/services/sequences";
 import { getSettings } from "@/server/services/settings";
 
@@ -55,12 +57,41 @@ export const invoiceInputSchema = z.object({
     .optional(),
   /** The auto-saved draft this invoice was built in; issuing deletes it. */
   draftId: z.uuid().optional(),
+  /** The quotation being converted; its quoted prices are read on the server (spec §3.4). */
+  quotationId: z.uuid().optional(),
 });
 
 export type InvoiceInput = z.input<typeof invoiceInputSchema>;
 
 /** Noon Colombo time on a business date, so the number's year matches the invoice date. */
 const atBusinessDate = (date: string) => new Date(`${date}T12:00:00+05:30`);
+
+/** The quotation an invoice converts, or null. Only an open (valid or expired) one can convert. */
+async function convertibleQuotation(tx: Executor, id: string | undefined, lock: boolean) {
+  if (!id) return null;
+  const quote = await loadQuotationPrices(tx, id, { lock });
+  if (quote.status === "converted") {
+    throw new InvalidState(`${quote.number} was already converted to ${quote.invoiceNumber}`);
+  }
+  if (quote.status === "cancelled") throw new InvalidState(`${quote.number} is cancelled`);
+  return quote;
+}
+
+/** Quoted prices for parts on a still-valid quotation; today's prices for everything else. */
+async function invoicePrices(
+  tx: Executor,
+  tierId: string,
+  partIds: string[],
+  quote: QuotationPrices | null,
+): Promise<Map<string, string>> {
+  const quoted = quote && !quote.expired ? quote.prices : new Map<string, string>();
+  const prices = await resolvePrices(tx, tierId, partIds.filter((id) => !quoted.has(id)));
+  for (const id of partIds) {
+    const price = quoted.get(id);
+    if (price) prices.set(id, price);
+  }
+  return prices;
+}
 
 /**
  * Issues an invoice in one transaction (spec §5.1). Any failure rolls back everything,
@@ -90,9 +121,12 @@ export async function createInvoice(
     if (customer.isWalkIn && data.paymentType === "credit") {
       throw new InvalidState("The walk-in customer can only buy for cash");
     }
+    // 2a. A quotation being converted is locked after the customer, so two people converting it
+    // at once can't both succeed: the second sees it converted.
+    const quote = await convertibleQuotation(tx, data.quotationId, true);
 
-    // 3–5. Prices, totals and the staff discount cap.
-    const prices = await resolvePrices(tx, customer.tierId, data.lines.map((l) => l.partId));
+    // 3–5. Prices (quoted where the quotation is still valid), totals and the staff discount cap.
+    const prices = await invoicePrices(tx, customer.tierId, data.lines.map((l) => l.partId), quote);
     const vatRate = settings.vatEnabled ? settings.vatRate : "0.00";
     const totals = computeTotals(
       data.lines.map((l) => ({ ...l, unitPrice: prices.get(l.partId)! })),
@@ -201,8 +235,14 @@ export async function createInvoice(
       await tx.execute(sql`select public.apply_held_credit(${customer.id})`);
     }
 
-    // 12. The draft is now a real invoice.
+    // 12. The draft is now a real invoice, and the quotation is converted into it.
     if (data.draftId) await tx.delete(invoiceDrafts).where(eq(invoiceDrafts.id, data.draftId));
+    if (quote) {
+      await tx
+        .update(quotations)
+        .set({ status: "converted", invoiceId: invoice.id, convertedBy: user.id, convertedAt: new Date() })
+        .where(eq(quotations.id, quote.id));
+    }
 
     return { id: invoice.id, number };
   });
@@ -271,6 +311,12 @@ export async function cancelInvoice(user: SessionUser, invoiceId: string, reason
       .set({ status: "cancelled", cancelReason: why, cancelledBy: user.id, cancelledAt: new Date() })
       .where(eq(invoices.id, invoiceId));
 
+    // A quotation converted into this invoice can be converted again (spec §3.6).
+    await tx
+      .update(quotations)
+      .set({ status: "open", invoiceId: null, convertedBy: null, convertedAt: null })
+      .where(eq(quotations.invoiceId, invoiceId));
+
     // Credit that paid this invoice is free again (allocations to a cancelled invoice don't count):
     // put it on the customer's other open invoices.
     await tx.execute(sql`select public.apply_held_credit(${invoice.customerId})`);
@@ -286,9 +332,10 @@ export async function previewInvoice(
   const settings = await getSettings();
   const [customer] = await db.select().from(customers).where(eq(customers.id, data.customerId));
   if (!customer) throw new NotFound("Customer not found");
+  const quote = await convertibleQuotation(db, data.quotationId, false);
 
   const partIds = data.lines.map((l) => l.partId);
-  const prices = await resolvePrices(db, customer.tierId, partIds);
+  const prices = await invoicePrices(db, customer.tierId, partIds, quote);
   const totals = computeTotals(
     data.lines.map((l) => ({ ...l, unitPrice: prices.get(l.partId)! })),
     data.invoiceDiscount,
@@ -384,6 +431,8 @@ export type InvoiceDetail = {
   cancelledAt: Date | null;
   createdAt: Date;
   createdByName: string;
+  /** The quotation this invoice was converted from; cleared when the invoice is cancelled. */
+  quotation: { id: string; number: string } | null;
   customer: {
     id: string;
     name: string;
@@ -428,6 +477,8 @@ export async function getInvoice(user: SessionUser, id: string): Promise<Invoice
       cancelledAt: invoices.cancelledAt,
       createdAt: invoices.createdAt,
       createdByName: profiles.fullName,
+      quotationId: quotations.id,
+      quotationNumber: quotations.number,
       customer: {
         id: customers.id,
         name: customers.name,
@@ -442,6 +493,7 @@ export async function getInvoice(user: SessionUser, id: string): Promise<Invoice
     .innerJoin(customers, eq(customers.id, invoices.customerId))
     .innerJoin(priceTiers, eq(priceTiers.id, invoices.tierId))
     .innerJoin(profiles, eq(profiles.userId, invoices.createdBy))
+    .leftJoin(quotations, eq(quotations.invoiceId, invoices.id))
     .where(eq(invoices.id, id));
   if (!row) throw new NotFound("Invoice not found");
 
@@ -463,5 +515,10 @@ export async function getInvoice(user: SessionUser, id: string): Promise<Invoice
     .where(eq(invoiceItems.invoiceId, id))
     .orderBy(asc(invoiceItems.lineNo));
 
-  return { ...row, items: items.map((i) => toStaffView(user, i)) };
+  const { quotationId, quotationNumber, ...rest } = row;
+  return {
+    ...rest,
+    quotation: quotationId && quotationNumber ? { id: quotationId, number: quotationNumber } : null,
+    items: items.map((i) => toStaffView(user, i)),
+  };
 }
