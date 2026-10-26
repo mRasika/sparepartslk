@@ -20,7 +20,7 @@ const MAX_CUSTOM_DAYS = 1096;
 const utc = (date: string) => new Date(`${date}T00:00:00Z`);
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-function isDate(value: string | undefined): value is string {
+export function isDate(value: string | undefined): value is string {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const d = utc(value);
   return !Number.isNaN(d.getTime()) && iso(d) === value;

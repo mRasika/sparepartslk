@@ -11,6 +11,7 @@ import { countInvoiceDrafts } from "@/server/services/invoice-drafts";
 import { NeedsAttention } from "./needs-attention";
 import { ResolveIssueButton } from "./resolve-issue-button";
 import { type SalesParams, SalesSection, SalesSectionSkeleton } from "./sales-section";
+import { TargetSection, TargetSectionSkeleton } from "./target-section";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<SalesParams> }) {
   const user = await requireUser();
@@ -81,6 +82,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       )}
 
       <NeedsAttention items={attention.items} owedNote={attention.owedNote} />
+
+      {user.role === "admin" && (
+        <Suspense fallback={<TargetSectionSkeleton />}>
+          <TargetSection user={user} />
+        </Suspense>
+      )}
 
       {user.role === "admin" && (
         // Keyed by the query so changing the period re-suspends here, not the whole page.
