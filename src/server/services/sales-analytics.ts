@@ -3,6 +3,7 @@ import { D, fmt } from "@/lib/money";
 import type { Bucket, DateRange, Period } from "@/lib/periods";
 import { requireRole, type SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
+import { traced } from "@/server/db/trace";
 
 export type SalesTotals = {
   /** Invoice net sales − return net amounts. Before VAT. */
@@ -196,10 +197,10 @@ export async function getSalesAnalytics(
 ): Promise<SalesAnalytics> {
   requireRole(user, "admin");
   const [current, previous, trend, topRows] = await Promise.all([
-    getSalesTotals(period.range),
-    getSalesTotals(period.compare),
-    getSalesTrend(period.range, period.bucket),
-    getTopSellers(period.range, top.dimension, top.sort),
+    traced("sales: totals", getSalesTotals(period.range)),
+    traced("sales: compare totals", getSalesTotals(period.compare)),
+    traced("sales: trend", getSalesTrend(period.range, period.bucket)),
+    traced("sales: top sellers", getTopSellers(period.range, top.dimension, top.sort)),
   ]);
   return { current, previous, trend, top: topRows };
 }

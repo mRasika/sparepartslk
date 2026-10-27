@@ -6,6 +6,7 @@ import { attentionItems } from "@/lib/attention";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { colomboDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
+import { traced } from "@/server/db/trace";
 import { getDashboard } from "@/server/services/dashboard";
 import { countInvoiceDrafts } from "@/server/services/invoice-drafts";
 import { NeedsAttention } from "./needs-attention";
@@ -16,7 +17,10 @@ import { TargetSection, TargetSectionSkeleton } from "./target-section";
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<SalesParams> }) {
   const user = await requireUser();
   const params = await searchParams;
-  const [d, draftCount] = await Promise.all([getDashboard(user), countInvoiceDrafts()]);
+  const [d, draftCount] = await Promise.all([
+    traced("page: dashboard", getDashboard(user)),
+    traced("page: draft count", countInvoiceDrafts()),
+  ]);
   const today = colomboDate();
   const attention = attentionItems({ ...d, draftCount });
 
