@@ -17,12 +17,14 @@ const globalForDb = globalThis as unknown as { pgClient?: postgres.Sql };
 const client =
   globalForDb.pgClient ??
   postgres(databaseUrl(), {
-    max: 10,
+    // No more than the Supabase pooler holds for us (5 server connections): with 10, a dashboard
+    // load opened ~10 connections at once and the queries on the last ones never got an answer, so
+    // the page hung until Vercel's 300 s limit. Extra queries now wait here instead.
+    max: 4,
     // Required by the Supabase transaction pooler; harmless on a direct connection.
     prepare: false,
-    // A Vercel instance can be frozen between requests, and a pooled connection kept across that may
-    // be dead afterwards: a query sent on it waits forever. Close idle connections soon, recycle the
-    // rest, and give up on a connect that hangs.
+    // Serverless instances come and go: close idle connections soon, recycle the rest, and give up
+    // on a connect that hangs.
     idle_timeout: 20,
     max_lifetime: 60 * 5,
     connect_timeout: 10,
