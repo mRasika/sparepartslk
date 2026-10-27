@@ -8,6 +8,7 @@ import { type DayStatus, monthPlan, type MonthPlan, type TargetRow } from "@/lib
 import { moneyString, optionalText } from "@/lib/validation";
 import { requireRole, type SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
+import { traced } from "@/server/db/trace";
 import { closedDays, payments, salesTargets } from "@/server/db/schema";
 import { InvalidState, NotFound } from "@/server/errors";
 import { getSalesTotals, getSalesTrend } from "@/server/services/sales-analytics";
@@ -129,23 +130,34 @@ export async function getDailyTargetReport(user: SessionUser, date: string): Pro
   const last = addDays(`${addDays(first, 31).slice(0, 8)}01`, -1);
 
   const [settings, rows, closed, dayTotals, lastWeek, lastMonth, trend, [collected]] = await Promise.all([
-    getSettings(),
-    db
-      .select({
-        effectiveFrom: salesTargets.effectiveFrom,
-        dailyTarget: salesTargets.dailyTarget,
-        closedWeekdays: salesTargets.closedWeekdays,
-      })
-      .from(salesTargets),
-    db.select({ day: closedDays.day }).from(closedDays).where(between(closedDays.day, first, last)),
-    getSalesTotals({ from: date, to: date }),
-    getSalesTotals({ from: addDays(date, -7), to: addDays(date, -7) }),
-    getSalesTotals(resolvePeriod({ period: "month" }, date).compare),
-    getSalesTrend({ from: first, to: date }, "day"),
-    db
-      .select({ total: sql<string>`coalesce(sum(${payments.amount}), 0)::numeric(12, 2)::text` })
-      .from(payments)
-      .where(and(eq(payments.paymentDate, date), eq(payments.status, "active"))),
+    traced("target: settings", getSettings()),
+    traced(
+      "target: targets",
+      db
+        .select({
+          effectiveFrom: salesTargets.effectiveFrom,
+          dailyTarget: salesTargets.dailyTarget,
+          closedWeekdays: salesTargets.closedWeekdays,
+        })
+        .from(salesTargets)
+        .then((r) => r),
+    ),
+    traced(
+      "target: closed days",
+      db.select({ day: closedDays.day }).from(closedDays).where(between(closedDays.day, first, last)).then((r) => r),
+    ),
+    traced("target: day totals", getSalesTotals({ from: date, to: date })),
+    traced("target: last week", getSalesTotals({ from: addDays(date, -7), to: addDays(date, -7) })),
+    traced("target: last month", getSalesTotals(resolvePeriod({ period: "month" }, date).compare)),
+    traced("target: trend", getSalesTrend({ from: first, to: date }, "day")),
+    traced(
+      "target: collected",
+      db
+        .select({ total: sql<string>`coalesce(sum(${payments.amount}), 0)::numeric(12, 2)::text` })
+        .from(payments)
+        .where(and(eq(payments.paymentDate, date), eq(payments.status, "active")))
+        .then((r) => r),
+    ),
   ]);
 
   const plan = monthPlan({
