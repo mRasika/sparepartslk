@@ -1,7 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
-import { traceQueries } from "./trace";
 
 function databaseUrl(): string {
   const url = process.env.VITEST ? process.env.TEST_DATABASE_URL : process.env.DATABASE_URL;
@@ -17,9 +16,9 @@ const globalForDb = globalThis as unknown as { pgClient?: postgres.Sql };
 const client =
   globalForDb.pgClient ??
   postgres(databaseUrl(), {
-    // No more than the Supabase pooler holds for us (5 server connections): with 10, a dashboard
-    // load opened ~10 connections at once and the queries on the last ones never got an answer, so
-    // the page hung until Vercel's 300 s limit. Extra queries now wait here instead.
+    // DATABASE_URL must be Supavisor's session pooler (port 5432): the transaction pooler (6543)
+    // loses pipelined queries, which hung the dashboard on Vercel. Session mode caps the total
+    // number of client connections and each Vercel instance holds up to `max`, so keep it low.
     max: 4,
     // Required by the Supabase transaction pooler; harmless on a direct connection.
     prepare: false,
@@ -29,11 +28,6 @@ const client =
     max_lifetime: 60 * 5,
     connect_timeout: 10,
     onnotice: () => {},
-    // Which connection each query is written to (preview only, see ./trace).
-    debug: traceQueries
-      ? (connection: number, query: string) =>
-          console.log(`[db-trace] sent on connection ${connection}: ${query.replace(/\s+/g, " ").slice(0, 80)}`)
-      : undefined,
   });
 
 if (process.env.NODE_ENV !== "production") globalForDb.pgClient = client;
