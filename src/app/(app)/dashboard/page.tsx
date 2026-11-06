@@ -9,6 +9,7 @@ import { requireUser } from "@/server/auth";
 import { traced } from "@/server/db/trace";
 import { getDashboard } from "@/server/services/dashboard";
 import { countInvoiceDrafts } from "@/server/services/invoice-drafts";
+import { salesTargetEnabled } from "@/server/features";
 import { NeedsAttention } from "./needs-attention";
 import { ResolveIssueButton } from "./resolve-issue-button";
 import { type SalesParams, SalesSection, SalesSectionSkeleton } from "./sales-section";
@@ -87,7 +88,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       <NeedsAttention items={attention.items} owedNote={attention.owedNote} />
 
-      {user.role === "admin" && (
+      {user.role === "admin" && salesTargetEnabled() && (
         <Suspense fallback={<TargetSectionSkeleton />}>
           <TargetSection user={user} />
         </Suspense>

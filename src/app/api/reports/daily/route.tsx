@@ -3,12 +3,14 @@ import { DailyReportPdf } from "@/components/print/daily-report-pdf";
 import { colomboDate } from "@/lib/dates";
 import { parseReportDate } from "@/lib/sales-target";
 import { getSessionUser } from "@/server/auth";
+import { salesTargetEnabled } from "@/server/features";
 import { getDailyTargetReport } from "@/server/services/sales-targets";
 
 export const runtime = "nodejs";
 
 /** The daily sales report PDF (spec §5). Admins only. */
 export async function GET(req: Request) {
+  if (!salesTargetEnabled()) return new Response("Not found", { status: 404 });
   const user = await getSessionUser();
   if (!user) return new Response("Sign in required", { status: 401 });
   if (user.role !== "admin") return new Response("Admins only", { status: 403 });
