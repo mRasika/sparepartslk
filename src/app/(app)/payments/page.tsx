@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -65,15 +66,28 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Sea
           );
         })}
       </nav>
-      {showOutstanding ? (
-        <Outstanding
-          overdueOnly={overdue === "1"}
-          late={isAgingGroupKey(late) ? late : null}
-          by={by === "overdue" ? "overdue" : "owed"}
-        />
-      ) : (
-        <Received q={q} />
-      )}
+      {/* Keyed by the query so switching views or sorts re-suspends here. Without its own boundary,
+          a same-page link here hung in production builds once the view's payload got large. */}
+      <Suspense key={JSON.stringify({ view, q, overdue, late, by })} fallback={<ViewSkeleton />}>
+        {showOutstanding ? (
+          <Outstanding
+            overdueOnly={overdue === "1"}
+            late={isAgingGroupKey(late) ? late : null}
+            by={by === "overdue" ? "overdue" : "owed"}
+          />
+        ) : (
+          <Received q={q} />
+        )}
+      </Suspense>
+    </div>
+  );
+}
+
+function ViewSkeleton() {
+  return (
+    <div role="status" aria-label="Loading" className="animate-pulse">
+      <div className="mb-4 h-9 w-72 rounded-md bg-muted" />
+      <div className="h-72 rounded-lg border bg-card" />
     </div>
   );
 }

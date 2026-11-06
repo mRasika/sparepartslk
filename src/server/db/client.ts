@@ -16,9 +16,17 @@ const globalForDb = globalThis as unknown as { pgClient?: postgres.Sql };
 const client =
   globalForDb.pgClient ??
   postgres(databaseUrl(), {
-    max: 10,
+    // DATABASE_URL must be Supavisor's session pooler (port 5432): the transaction pooler (6543)
+    // loses pipelined queries, which hung the dashboard on Vercel. Session mode caps the total
+    // number of client connections and each Vercel instance holds up to `max`, so keep it low.
+    max: 4,
     // Required by the Supabase transaction pooler; harmless on a direct connection.
     prepare: false,
+    // Serverless instances come and go: close idle connections soon, recycle the rest, and give up
+    // on a connect that hangs.
+    idle_timeout: 20,
+    max_lifetime: 60 * 5,
+    connect_timeout: 10,
     onnotice: () => {},
   });
 

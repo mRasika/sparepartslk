@@ -5,6 +5,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { colomboDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
+import { salesTargetEnabled } from "@/server/features";
 import { getTargetSettings } from "@/server/services/sales-targets";
 import { getSettings } from "@/server/services/settings";
 import { ClosedDays } from "./closed-days";
@@ -14,7 +15,7 @@ import { SettingsForm } from "./settings-form";
 export default async function SettingsPage() {
   const user = await requireUser();
   if (user.role !== "admin") return <NoAccess what="settings" />;
-  const [s, target] = await Promise.all([getSettings(), getTargetSettings(user)]);
+  const [s, target] = await Promise.all([getSettings(), salesTargetEnabled() ? getTargetSettings(user) : null]);
 
   return (
     <div>
@@ -42,16 +43,18 @@ export default async function SettingsPage() {
           logoUrl: s.logoUrl,
         }}
       />
-      <section id="sales-target" className="mt-10 grid max-w-3xl scroll-mt-20 gap-6 border-t pt-8">
-        <div>
-          <h2 className="text-base font-semibold">Sales target</h2>
-          <p className="text-sm text-muted-foreground">
-            Shown on the dashboard and in the daily report. A change applies from today; earlier days keep their target.
-          </p>
-        </div>
-        <SalesTargetForm current={target.current} previous={target.previous} />
-        <ClosedDays closedDays={target.closedDays} today={colomboDate()} />
-      </section>
+      {target && (
+        <section id="sales-target" className="mt-10 grid max-w-3xl scroll-mt-20 gap-6 border-t pt-8">
+          <div>
+            <h2 className="text-base font-semibold">Sales target</h2>
+            <p className="text-sm text-muted-foreground">
+              Shown on the dashboard and in the daily report. A change applies from today; earlier days keep their target.
+            </p>
+          </div>
+          <SalesTargetForm current={target.current} previous={target.previous} />
+          <ClosedDays closedDays={target.closedDays} today={colomboDate()} />
+        </section>
+      )}
     </div>
   );
 }

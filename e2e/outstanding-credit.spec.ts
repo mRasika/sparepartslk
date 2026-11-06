@@ -4,6 +4,13 @@ import { login } from "./users";
 // Runs after full-flow (files run in name order): Nimal Perera owes on a credit invoice dated today.
 test("staff sees who owes and filters the list by how late", async ({ page }) => {
   await login(page, "staff");
+  await page.goto("/payments");
+  await page.getByRole("link", { name: "Outstanding", exact: true }).click();
+  await expect(page).toHaveURL(/view=outstanding/);
+  await page.getByRole("link", { name: "Most overdue" }).click();
+  await expect(page).toHaveURL(/by=overdue/);
+  await expect(page.getByRole("link", { name: "Most overdue" })).toHaveAttribute("aria-current", "page");
+
   await page.goto("/payments?view=outstanding&late=abc&by=xyz"); // bad params are ignored
 
   for (const tile of ["Owed", "Overdue", "Due in next 7 days", "Days to collect"]) {

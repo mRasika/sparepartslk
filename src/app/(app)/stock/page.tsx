@@ -1,5 +1,6 @@
 import { ClipboardList, Plus } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,7 @@ import {
 import { formatDate, formatMoney } from "@/lib/format";
 import { D, fmt, sum } from "@/lib/money";
 import { ABC_CLASSES, isAbcClass, isStockAgeBand, STOCK_AGE_BANDS, type AbcClass, type StockAgeBand } from "@/lib/stock-health";
-import { requireUser } from "@/server/auth";
+import { requireUser, type SessionUser } from "@/server/auth";
 import { listCategories } from "@/server/services/catalog";
 import { stockList } from "@/server/services/inventory";
 import { getStockHealth } from "@/server/services/stock-health";
@@ -31,6 +32,47 @@ export default async function StockPage({ searchParams }: { searchParams: Search
   // Health filters are admin-only; for staff the params are ignored.
   const age: StockAgeBand | null = isAdmin && isStockAgeBand(params.age) ? params.age : null;
   const cls: AbcClass | null = isAdmin && !age && isAbcClass(params.class) ? params.class : null;
+
+  return (
+    <div>
+      <PageHeader
+        title="Stock"
+        description="What is on the shelves now."
+        actions={
+          <>
+            <Link href="/stock/adjustments" className={buttonVariants({ variant: "outline" })}>
+              <ClipboardList /> Adjustments
+            </Link>
+            <Link href="/stock/adjustments/new" className={buttonVariants()}>
+              <Plus /> Adjust stock
+            </Link>
+          </>
+        }
+      />
+      {/* Keyed by the filters so a health filter link re-suspends here (see the Payments page). */}
+      <Suspense key={JSON.stringify({ q, category, low, age, cls })} fallback={<StockSkeleton />}>
+        <StockView user={user} q={q} category={category} low={low} age={age} cls={cls} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function StockView({
+  user,
+  q,
+  category,
+  low,
+  age,
+  cls,
+}: {
+  user: SessionUser;
+  q: string;
+  category: string;
+  low: string;
+  age: StockAgeBand | null;
+  cls: AbcClass | null;
+}) {
+  const isAdmin = user.role === "admin";
   const [categories, health] = await Promise.all([listCategories(), isAdmin ? getStockHealth(user) : null]);
   // A band or class narrows the list in SQL (by part id), so the list's row limit comes after it.
   const partIds =
@@ -60,21 +102,7 @@ export default async function StockPage({ searchParams }: { searchParams: Search
   const totalValue = isAdmin ? fmt(sum(rows.map((r) => D(r.stockValue ?? "0")))) : null;
 
   return (
-    <div>
-      <PageHeader
-        title="Stock"
-        description="What is on the shelves now."
-        actions={
-          <>
-            <Link href="/stock/adjustments" className={buttonVariants({ variant: "outline" })}>
-              <ClipboardList /> Adjustments
-            </Link>
-            <Link href="/stock/adjustments/new" className={buttonVariants()}>
-              <Plus /> Adjust stock
-            </Link>
-          </>
-        }
-      />
+    <>
       {health && <StockHealthSummary health={health} age={age} cls={cls} hrefFor={hrefFor} />}
       <form className="mb-4 flex flex-wrap items-center gap-2" role="search">
         {age && <input type="hidden" name="age" value={age} />}
@@ -170,6 +198,15 @@ export default async function StockPage({ searchParams }: { searchParams: Search
           )}
         </Table>
       </div>
+    </>
+  );
+}
+
+function StockSkeleton() {
+  return (
+    <div role="status" aria-label="Loading" className="animate-pulse">
+      <div className="mb-4 h-9 w-full max-w-xl rounded-md bg-muted" />
+      <div className="h-72 rounded-lg border bg-card" />
     </div>
   );
 }

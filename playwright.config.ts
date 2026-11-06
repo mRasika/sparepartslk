@@ -23,7 +23,7 @@ export default defineConfig({
     // Its own port and build folder, pointed at the test database, so it never touches dev data.
     // global-setup rebuilds that database every run, so the data cache (cached tier, category
     // lists) from the last run is cleared first: its ids no longer exist.
-    command: `node -e "require('fs').rmSync('.next-e2e/cache', { recursive: true, force: true })" && pnpm exec cross-env NEXT_DIST_DIR=.next-e2e DATABASE_URL=${process.env.TEST_DATABASE_URL} next dev -p ${PORT}`,
+    command: `node -e "require('fs').rmSync('.next-e2e/cache', { recursive: true, force: true })" && pnpm exec cross-env NEXT_DIST_DIR=.next-e2e FEATURE_SALES_TARGET=1 DATABASE_URL=${process.env.TEST_DATABASE_URL} next dev -p ${PORT}`,
     url: `http://localhost:${PORT}/login`,
     reuseExistingServer: false,
     timeout: 180_000,

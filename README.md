@@ -72,6 +72,9 @@ To start the local database over: `pnpm supabase db reset`, then `pnpm db:migrat
 5. **Deploy to Vercel.** Import the repo and set these environment variables (Production and Preview):
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
    `DATABASE_URL` (pooler URL), `DIRECT_URL`.
+   Optional features are off until you set their variable to `1` and redeploy. Turn one on only when the owner
+   asks for it: `FEATURE_SALES_TARGET` adds the daily sales target (dashboard card, Settings section, daily
+   report PDF). Turning it off again only hides it; saved targets are kept.
 6. In Supabase **Authentication → URL configuration**, set the Site URL to the Vercel domain.
 
 Backups: Supabase takes daily backups. Issued documents are never deleted, as tax records must be kept for at least 5 years.
