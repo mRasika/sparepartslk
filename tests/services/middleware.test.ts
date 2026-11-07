@@ -54,6 +54,13 @@ describe("middleware", () => {
     expect(pattern.test("/login")).toBe(false);
   });
 
+  it("lets the setup screen through without a session, but nothing that merely starts with it", () => {
+    const pattern = new RegExp(`^${config.matcher[0]}$`);
+    expect(pattern.test("/setup")).toBe(false);
+    expect(pattern.test("/setupx")).toBe(true);
+    expect(pattern.test("/settings")).toBe(true);
+  });
+
   it("lets the health check through without a session, but still guards the logo", () => {
     const pattern = new RegExp(`^${config.matcher[0]}$`);
     expect(pattern.test("/api/health")).toBe(false);

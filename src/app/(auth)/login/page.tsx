@@ -1,6 +1,8 @@
 import { CircleCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { companyExists } from "@/server/services/setup";
 import { cachedBusinessName } from "@/server/cached";
 import { emailIsSetUp } from "@/server/email";
 import { LoginForm } from "./login-form";
@@ -10,6 +12,8 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ reset?: string }> }) {
+  // A new company's empty database: the first visitor is sent on to the one-time setup.
+  if (!(await companyExists())) redirect("/setup");
   const { reset } = await searchParams;
   const name = await cachedBusinessName();
   return (
