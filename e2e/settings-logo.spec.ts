@@ -7,7 +7,7 @@ test("an uploaded logo shows on Settings and on an invoice's print page", async 
   await page.goto("/settings");
   // The e2e database starts with no business name, and the form requires one.
   await page.getByLabel("Business name").fill("E2E Motors");
-  await page.getByLabel("Logo (PNG, JPG or WebP, under 1 MB)").setInputFiles("e2e/fixtures/logo.png");
+  await page.getByLabel("Logo (PNG or JPG, under 1 MB)").setInputFiles("e2e/fixtures/logo.png");
   await expect(page.getByText("Logo uploaded. Save to keep it.")).toBeVisible();
   const preview = page.getByRole("img", { name: "Current logo" });
   await expect(preview).toHaveAttribute("src", /\/api\/logo\?v=\d+/);

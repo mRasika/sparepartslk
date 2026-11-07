@@ -1,10 +1,13 @@
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import { formatDate, formatMoney } from "@/lib/format";
+import type { PdfLogo } from "@/server/services/logo";
 import type { InvoicePrintData } from "@/server/services/print";
 
 const s = StyleSheet.create({
   page: { padding: 34, fontSize: 9.5, fontFamily: "Helvetica", color: "#111" },
   header: { flexDirection: "row", justifyContent: "space-between", borderBottom: "1.5pt solid #111", paddingBottom: 10 },
+  business: { flexDirection: "row", gap: 12 },
+  logo: { height: 48, maxWidth: 120, objectFit: "contain" },
   bizName: { fontSize: 15, fontFamily: "Helvetica-Bold", marginBottom: 2 },
   title: { fontSize: 17, fontFamily: "Helvetica-Bold", textAlign: "right", marginBottom: 4 },
   metaRow: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
@@ -41,8 +44,8 @@ const s = StyleSheet.create({
   },
 });
 
-/** The A4 invoice as a PDF, from the same data as the print page. */
-export function InvoicePdf({ data }: { data: InvoicePrintData }) {
+/** The A4 invoice as a PDF, from the same data as the print page. The logo comes from `logoForPdf`. */
+export function InvoicePdf({ data, logo }: { data: InvoicePrintData; logo?: PdfLogo | null }) {
   const quote = data.kind === "quotation";
   const vatOn = Number(data.vatRate) > 0;
   return (
@@ -50,11 +53,15 @@ export function InvoicePdf({ data }: { data: InvoicePrintData }) {
       <Page size="A4" style={s.page}>
         {data.status === "cancelled" && <Text style={s.watermark}>CANCELLED</Text>}
         <View style={s.header}>
-          <View>
-            <Text style={s.bizName}>{data.business.name}</Text>
-            {data.business.address ? <Text>{data.business.address}</Text> : null}
-            <Text>{[data.business.phone, data.business.email].filter(Boolean).join("  |  ")}</Text>
-            {data.business.tin ? <Text>TIN: {data.business.tin}</Text> : null}
+          <View style={s.business}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- a PDF image, not an HTML <img> */}
+            {logo ? <Image src={logo} style={s.logo} /> : null}
+            <View>
+              <Text style={s.bizName}>{data.business.name}</Text>
+              {data.business.address ? <Text>{data.business.address}</Text> : null}
+              <Text>{[data.business.phone, data.business.email].filter(Boolean).join("  |  ")}</Text>
+              {data.business.tin ? <Text>TIN: {data.business.tin}</Text> : null}
+            </View>
           </View>
           <View>
             <Text style={s.title}>{data.title}</Text>

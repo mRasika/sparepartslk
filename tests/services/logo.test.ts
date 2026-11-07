@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "@/app/api/logo/route";
 import { db } from "@/server/db/client";
 import { logo } from "@/server/db/schema";
 import { DomainError, Forbidden } from "@/server/errors";
-import { LOGO_MAX_BYTES, readLogo, saveLogo } from "@/server/services/logo";
+import { LOGO_MAX_BYTES, logoForPdf, readLogo, saveLogo } from "@/server/services/logo";
 import { resetDb } from "../helpers/db";
 import { makeUser } from "../helpers/factories";
 
@@ -32,23 +32,24 @@ describe("logo", () => {
     expect(url).toBe(`/api/logo?v=${stored!.updatedAt.getTime()}`);
   });
 
-  it("accepts JPEG and WebP, and a new upload replaces the old one", async () => {
+  it("accepts JPEG, and a new upload replaces the old one", async () => {
     const admin = await makeUser("admin");
     await saveLogo(admin, { type: "image/png", bytes: PNG });
     await saveLogo(admin, { type: "image/jpeg", bytes: JPEG });
-    await saveLogo(admin, { type: "image/webp", bytes: WEBP });
     const rows = await db.select().from(logo);
     expect(rows).toHaveLength(1);
-    expect(rows[0].contentType).toBe("image/webp");
-    expect(new Uint8Array(rows[0].data)).toEqual(WEBP);
+    expect(rows[0].contentType).toBe("image/jpeg");
+    expect(new Uint8Array(rows[0].data)).toEqual(JPEG);
   });
 
   it("refuses an empty file, another type, bytes that don't match, and over 1 MB", async () => {
     const admin = await makeUser("admin");
     expect(await refusal(saveLogo(admin, { type: "image/png", bytes: new Uint8Array() }))).toBe("Choose an image");
-    expect(await refusal(saveLogo(admin, { type: "image/gif", bytes: PNG }))).toBe("Use a PNG, JPG or WebP image");
+    expect(await refusal(saveLogo(admin, { type: "image/gif", bytes: PNG }))).toBe("Use a PNG or JPG image");
+    // The PDF library can't draw WebP, so it would vanish from invoice PDFs.
+    expect(await refusal(saveLogo(admin, { type: "image/webp", bytes: WEBP }))).toBe("Use a PNG or JPG image");
     const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
-    expect(await refusal(saveLogo(admin, { type: "image/png", bytes: svg }))).toBe("Use a PNG, JPG or WebP image");
+    expect(await refusal(saveLogo(admin, { type: "image/png", bytes: svg }))).toBe("Use a PNG or JPG image");
     const big = new Uint8Array(LOGO_MAX_BYTES + 1);
     big.set(PNG.subarray(0, 8));
     expect(await refusal(saveLogo(admin, { type: "image/png", bytes: big }))).toBe("Keep the logo under 1 MB");
@@ -75,5 +76,54 @@ describe("logo", () => {
   it("answers 404 when there is no logo", async () => {
     const res = await GET();
     expect(res.status).toBe(404);
+  });
+});
+
+describe("logoForPdf", () => {
+  beforeEach(resetDb);
+
+  const OLD_LINK = "https://abc.supabase.co/storage/v1/object/public/branding/logo-1.jpg";
+  const answer = (bytes: Uint8Array, status = 200) => vi.fn(async () => new Response(new Uint8Array(bytes), { status }));
+
+  it("is null when there is no logo", async () => {
+    expect(await logoForPdf(null)).toBeNull();
+  });
+
+  it("reads a stored PNG or JPEG straight from the database", async () => {
+    const admin = await makeUser("admin");
+    const { url } = await saveLogo(admin, { type: "image/png", bytes: PNG });
+    const png = await logoForPdf(url);
+    expect(png?.format).toBe("png");
+    expect(new Uint8Array(png!.data)).toEqual(PNG);
+
+    const jpeg = await logoForPdf((await saveLogo(admin, { type: "image/jpeg", bytes: JPEG })).url);
+    expect(jpeg?.format).toBe("jpg");
+  });
+
+  it("is null when the address points at the database but nothing is stored", async () => {
+    expect(await logoForPdf("/api/logo?v=1")).toBeNull();
+  });
+
+  it("downloads the old Supabase link until the logo is uploaded again", async () => {
+    const fetchImpl = answer(JPEG);
+    const pdfLogo = await logoForPdf(OLD_LINK, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledWith(OLD_LINK, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(pdfLogo?.format).toBe("jpg");
+    expect(new Uint8Array(pdfLogo!.data)).toEqual(JPEG);
+  });
+
+  it("is null when the old link fails, so the PDF still downloads", async () => {
+    expect(await logoForPdf(OLD_LINK, answer(JPEG, 404))).toBeNull();
+    expect(await logoForPdf(OLD_LINK, vi.fn(async () => Promise.reject(new Error("timeout"))))).toBeNull();
+  });
+
+  it("only downloads Supabase public storage links", async () => {
+    const fetchImpl = answer(PNG);
+    expect(await logoForPdf("https://example.com/logo.png", fetchImpl)).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("is null for a picture the PDF can't draw", async () => {
+    expect(await logoForPdf(OLD_LINK, answer(WEBP))).toBeNull();
   });
 });
