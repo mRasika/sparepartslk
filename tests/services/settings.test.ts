@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { Forbidden } from "@/server/errors";
 import { createInvoice } from "@/server/services/invoicing";
 import { getInvoicePrintData } from "@/server/services/print";
-import { getSettings, updateSettings, type SettingsInput } from "@/server/services/settings";
+import { findSettings, getSettings, updateSettings, type SettingsInput } from "@/server/services/settings";
+import { db } from "@/server/db/client";
+import { settings } from "@/server/db/schema";
 import { resetDb } from "../helpers/db";
 import { makeCustomer, makePart, makeUser } from "../helpers/factories";
 
@@ -22,6 +24,12 @@ const base: SettingsInput = {
 describe("settings", () => {
   beforeEach(async () => {
     await resetDb();
+  });
+
+  it("findSettings gives the row, or null when there is none", async () => {
+    await expect(findSettings()).resolves.toMatchObject({ id: 1 });
+    await db.delete(settings);
+    await expect(findSettings()).resolves.toBeNull();
   });
 
   it("returns the seeded defaults", async () => {

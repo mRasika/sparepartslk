@@ -60,10 +60,12 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
 ];
 
 export function Sidebar({
+  businessName,
   fullName,
   role,
   lowStockCount = 0,
 }: {
+  businessName: string;
   fullName: string;
   role: Role;
   lowStockCount?: number;
@@ -80,7 +82,7 @@ export function Sidebar({
     <aside className="bg-sidebar text-sidebar-foreground md:fixed md:inset-y-0 md:left-0 md:flex md:w-60 md:flex-col">
       <div className="flex h-14 items-center justify-between px-4 md:h-16">
         <Link href="/dashboard" className="text-lg font-semibold tracking-tight text-white">
-          Sparepartslk
+          {businessName}
         </Link>
         <button
           type="button"

@@ -4,7 +4,7 @@ import { CODE_FAILED, RESET_CODE_TRIES } from "@/lib/reset-code";
 import { verifyPassword } from "@/lib/password-hash";
 import { sessionUserFrom } from "@/server/auth";
 import { db } from "@/server/db/client";
-import { account, passwordResetCodes, profiles } from "@/server/db/schema";
+import { account, passwordResetCodes, profiles, settings } from "@/server/db/schema";
 import type { Email } from "@/server/email";
 import { Forbidden } from "@/server/errors";
 import { HOUR, takeLimit } from "@/server/rate-limit";
@@ -85,6 +85,16 @@ describe("password reset by email", () => {
       expect(row.codeHash).not.toContain(code);
     });
 
+    it("names the company in the subject, or Sparepartslk when no name is saved", async () => {
+      const user = await makeLogin("staff", { canGetEmails: true });
+      const f = fakes();
+      await askCode(user.email, f.deps);
+      expect(f.sent[0].subject).toBe("Your Sparepartslk password code");
+      await db.update(settings).set({ businessName: "Silva Motors" });
+      await askCode(user.email, f.deps);
+      expect(f.sent[1].subject).toBe("Your Silva Motors password code");
+    });
+
     it("sends nothing to unknown, turned-off or unticked logins", async () => {
       const off = await makeUser("staff", { canGetEmails: true, isActive: false });
       const unticked = await makeUser("staff");
@@ -155,6 +165,15 @@ describe("password reset by email", () => {
       await expect(sessionUserFrom(await signedInHeaders(user.email, NEW_PASSWORD))).resolves.toEqual(user);
       // Works once.
       await expect(tryCode(user.email, f.codeIn(f.sent[0]), f.deps)).resolves.toEqual({ ok: false, message: CODE_FAILED });
+    });
+
+    it("names the company in the changed-password notice", async () => {
+      const user = await makeLogin("staff", { canGetEmails: true });
+      await db.update(settings).set({ businessName: "Silva Motors" });
+      const f = fakes();
+      await askCode(user.email, f.deps);
+      await expect(tryCode(user.email, f.codeIn(f.sent[0]), f.deps)).resolves.toEqual({ ok: true });
+      expect(f.sent[1].subject).toBe("Your Silva Motors password was changed");
     });
 
     it("checks the new password before the code, so a short one costs no try", async () => {

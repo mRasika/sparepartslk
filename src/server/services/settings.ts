@@ -8,6 +8,12 @@ import { settings } from "@/server/db/schema";
 export type Settings = typeof settings.$inferSelect;
 
 /** The single settings row (seeded by insertBaseData). */
+/** The settings row, or null on a database that hasn't been set up yet. */
+export async function findSettings(tx: Executor = db): Promise<Settings | null> {
+  const [row] = await tx.select().from(settings);
+  return row ?? null;
+}
+
 export async function getSettings(tx: Executor = db): Promise<Settings> {
   const [row] = await tx.select().from(settings);
   if (!row) throw new Error("Settings row missing; run pnpm db:seed");

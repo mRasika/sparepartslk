@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans } from "next/font/google";
+import { cachedBusinessName } from "@/server/cached";
 import "./globals.css";
 
 const plex = IBM_Plex_Sans({
@@ -8,10 +9,9 @@ const plex = IBM_Plex_Sans({
   weight: ["400", "500", "600", "700"],
 });
 
-export const metadata: Metadata = {
-  title: "Sparepartslk",
-  description: "Stock management and billing",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: await cachedBusinessName(), description: "Stock management and billing" };
+}
 
 export default function RootLayout({
   children,

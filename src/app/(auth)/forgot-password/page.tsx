@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CODE_SENT_ANSWER } from "@/lib/reset-code";
+import { cachedBusinessName } from "@/server/cached";
 import { emailIsSetUp } from "@/server/email";
 import { ForgotPasswordForm } from "./forgot-password-form";
 
-export const metadata: Metadata = { title: "Forgot password · Sparepartslk", robots: { index: false } };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: `Forgot password · ${await cachedBusinessName()}`, robots: { index: false } };
+}
 
 export default function ForgotPasswordPage() {
   const canEmail = emailIsSetUp();
