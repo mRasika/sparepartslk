@@ -13,6 +13,7 @@ import {
   user,
 } from "@/server/db/schema";
 import type { Role, SessionUser } from "@/server/auth";
+import { createLogin } from "@/server/auth-admin";
 import type { PartInput } from "@/server/services/catalog";
 
 let counter = 0;
@@ -37,6 +38,20 @@ export async function makeUser(
       canGetEmails: overrides.canGetEmails ?? false,
     });
   });
+  return { id, email, fullName, role };
+}
+
+export const LOGIN_PASSWORD = "factory-pass-1";
+
+/** Like makeUser, but a real login: user, credential account (password LOGIN_PASSWORD) and profile. */
+export async function makeLogin(
+  role: Role,
+  overrides: Partial<{ fullName: string; email: string; canGetEmails: boolean }> = {},
+): Promise<SessionUser> {
+  counter += 1;
+  const email = overrides.email ?? `${role}${counter}-${randomUUID().slice(0, 8)}@test.local`;
+  const fullName = overrides.fullName ?? `Test ${role} ${counter}`;
+  const { id } = await createLogin({ email, name: fullName, password: LOGIN_PASSWORD, role, canGetEmails: overrides.canGetEmails });
   return { id, email, fullName, role };
 }
 

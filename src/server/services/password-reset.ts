@@ -9,27 +9,24 @@ import {
   RESET_CODE_MINUTES,
   RESET_CODE_TRIES,
 } from "@/lib/reset-code";
+import { setPassword } from "@/server/auth-admin";
 import { db } from "@/server/db/client";
 import { passwordResetCodes, profiles } from "@/server/db/schema";
 import { sendEmail as realSendEmail, type SendEmail } from "@/server/email";
 import { DAY, HOUR, takeLimit } from "@/server/rate-limit";
-import { createSupabaseAdminClient } from "@/server/supabase";
-import type { PasswordAdmin } from "@/server/services/users";
 
 export const REQUESTS_PER_EMAIL_HOUR = 3;
 export const REQUESTS_PER_EMAIL_DAY = 10;
 export const REQUESTS_PER_DEVICE = 10;
 export const TRIES_PER_DEVICE = 10;
 
-export type ResetDeps = { send?: SendEmail; authAdmin?: PasswordAdmin; secret?: string };
+export type ResetDeps = { send?: SendEmail; secret?: string };
 
 function resetSecret(deps: ResetDeps): string {
-  const secret = deps.secret ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!secret) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set");
+  const secret = deps.secret ?? process.env.BETTER_AUTH_SECRET;
+  if (!secret) throw new Error("BETTER_AUTH_SECRET is not set");
   return secret;
 }
-
-const passwordAdmin = (deps: ResetDeps): PasswordAdmin => deps.authAdmin ?? createSupabaseAdminClient().auth.admin;
 
 /** A login that may get a code: it exists, is turned on, and the admin ticked "Can get emails". */
 async function findResettable(email: string) {
@@ -155,10 +152,8 @@ export async function resetWithCode(
         .where(and(eq(passwordResetCodes.email, email), eq(passwordResetCodes.codeHash, row.codeHash)))
         .returning({ email: passwordResetCodes.email });
       if (used.length !== 1) return false;
-      // Every session that signed in before now stops working (see getSessionUser).
-      await tx.update(profiles).set({ signedOutAt: now }).where(eq(profiles.userId, user.id));
-      const { error } = await passwordAdmin(deps).updateUserById(user.id, { password: input.newPassword });
-      if (error) throw new Error(`Supabase could not set the password: ${error.message}`);
+      // New password, and every device this login is signed in on is signed out.
+      await setPassword(user.id, input.newPassword, tx);
       return true;
     });
     if (!saved) return failed;
