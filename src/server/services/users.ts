@@ -1,8 +1,9 @@
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { passwordSchema } from "@/lib/password";
 import { requireRole, type Role, type SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
-import { profiles } from "@/server/db/schema";
+import { passwordResetCodes, profiles } from "@/server/db/schema";
 import { DomainError, InvalidState, NotFound } from "@/server/errors";
 import { createSupabaseAdminClient } from "@/server/supabase";
 
@@ -18,7 +19,8 @@ export const newUserSchema = z.object({
   email: z.email("Enter a valid email").transform((v) => v.trim().toLowerCase()),
   fullName: z.string().trim().min(1, "Name is required").max(80),
   role: z.enum(["admin", "staff"]),
-  password: z.string().min(8, "Use at least 8 characters").max(72),
+  password: passwordSchema,
+  canGetEmails: z.boolean().default(false),
 });
 
 export type NewUserInput = z.input<typeof newUserSchema>;
@@ -31,6 +33,7 @@ export async function listUsers() {
       fullName: profiles.fullName,
       role: profiles.role,
       isActive: profiles.isActive,
+      canGetEmails: profiles.canGetEmails,
       createdAt: profiles.createdAt,
     })
     .from(profiles)
@@ -62,6 +65,7 @@ export async function createUser(
     email: data.email,
     fullName: data.fullName,
     role: data.role,
+    canGetEmails: data.canGetEmails,
   });
   return { id: created.user.id };
 }
@@ -95,4 +99,49 @@ export async function setUserRole(user: SessionUser, userId: string, role: Role)
     throw new InvalidState("At least one active admin is needed");
   }
   await db.update(profiles).set({ role }).where(eq(profiles.userId, userId));
+}
+
+/**
+ * The admin's tick that this login's email is read only by that person, so "Forgot password?" may
+ * send a code to it. Turning it off also throws away any code already sent.
+ */
+export async function setCanGetEmails(user: SessionUser, userId: string, on: boolean): Promise<void> {
+  requireRole(user, "admin");
+  const updated = await db
+    .update(profiles)
+    .set({ canGetEmails: on })
+    .where(eq(profiles.userId, userId))
+    .returning({ id: profiles.userId });
+  if (updated.length === 0) throw new NotFound("User not found");
+  if (!on) await db.delete(passwordResetCodes).where(eq(passwordResetCodes.userId, userId));
+}
+
+/** The slice of Supabase's auth admin API that sets a password; tests pass a fake. */
+export type PasswordAdmin = {
+  updateUserById(id: string, attrs: { password: string }): Promise<{ error: { message: string } | null }>;
+};
+
+/**
+ * Admin sets a new password for a login (works with or without email). That login is signed out on
+ * every device, and any password code already sent is thrown away.
+ */
+export async function setUserPassword(
+  user: SessionUser,
+  userId: string,
+  password: string,
+  deps: { authAdmin?: PasswordAdmin; now?: Date } = {},
+): Promise<void> {
+  requireRole(user, "admin");
+  const parsed = passwordSchema.safeParse(password);
+  if (!parsed.success) throw new DomainError("Validation", parsed.error.issues[0].message, { field: "password" });
+  const [target] = await db.select({ id: profiles.userId }).from(profiles).where(eq(profiles.userId, userId));
+  if (!target) throw new NotFound("User not found");
+
+  const authAdmin = deps.authAdmin ?? createSupabaseAdminClient().auth.admin;
+  await db.transaction(async (tx) => {
+    await tx.update(profiles).set({ signedOutAt: deps.now ?? new Date() }).where(eq(profiles.userId, userId));
+    await tx.delete(passwordResetCodes).where(eq(passwordResetCodes.userId, userId));
+    const { error } = await authAdmin.updateUserById(userId, { password });
+    if (error) throw new DomainError("AuthError", error.message, { field: "password" });
+  });
 }

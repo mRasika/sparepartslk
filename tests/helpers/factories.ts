@@ -19,7 +19,7 @@ let counter = 0;
 /** Inserts a profile with a random user id (no Supabase auth user needed). */
 export async function makeUser(
   role: Role,
-  overrides: Partial<{ fullName: string; email: string; isActive: boolean }> = {},
+  overrides: Partial<{ fullName: string; email: string; isActive: boolean; canGetEmails: boolean }> = {},
 ): Promise<SessionUser> {
   counter += 1;
   const id = randomUUID();
@@ -31,6 +31,7 @@ export async function makeUser(
     fullName,
     role,
     isActive: overrides.isActive ?? true,
+    canGetEmails: overrides.canGetEmails ?? false,
   });
   return { id, email, fullName, role };
 }

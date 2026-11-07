@@ -78,6 +78,13 @@
       "when": 1793023846592,
       "tag": "0010_sales_targets",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794032267486,
+      "tag": "0011_password_reset",
+      "breakpoints": true
     }
   ]
 }

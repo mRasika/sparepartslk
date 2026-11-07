@@ -41,6 +41,10 @@ export const profiles = pgTable("profiles", {
   fullName: text("full_name").notNull(),
   role: roleEnum("role").notNull().default("staff"),
   isActive: boolean("is_active").notNull().default(true),
+  /** Admin's tick: this email is read only by this person, so a password code may be sent to it. */
+  canGetEmails: boolean("can_get_emails").notNull().default(false),
+  /** Sessions that signed in before this moment are no longer accepted (set when the password changes). */
+  signedOutAt: timestamp("signed_out_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
