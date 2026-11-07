@@ -208,7 +208,7 @@ Expected: FAIL (`@/server/better-auth` not found).
 - [ ] **Step 5: Remove the `sessionSignedInAt` test** from `tests/lib/reset-code.test.ts`.
 
 - [ ] **Step 6: Run** `pnpm vitest run tests/services/auth.test.ts tests/lib` and `pnpm typecheck`.
-Expected: auth tests pass. Typecheck still fails in `login/actions.ts`, `users.ts` and `password-reset.ts`; Tasks 4–5 fix those. Don't commit until the typecheck errors are only in those files.
+Expected: auth tests pass. The only typecheck errors left are in `login/actions.ts`, `users.ts` and `password-reset.ts` (fixed in Tasks 4–5). Commit with those errors; if errors show up anywhere else, fix them first.
 
 - [ ] **Step 7: Commit**
 
