@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+# emails the e2e server "sends" (EMAIL_OUTBOX_DIR)
+/.e2e-outbox
 
 # next.js
 /.next/

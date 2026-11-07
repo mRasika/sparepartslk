@@ -4,3 +4,4 @@ export * from "./parties";
 export * from "./documents";
 export * from "./ledger";
 export * from "./targets";
+export * from "./password-reset";

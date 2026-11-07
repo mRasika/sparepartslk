@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -5,7 +6,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { insertBaseData } from "../src/server/db/base-data";
 import * as schema from "../src/server/db/schema";
-import { E2E_USERS } from "./users";
+import { E2E_OUTBOX, E2E_USERS } from "./users";
 
 /**
  * Fresh test database for every e2e run: create if missing, migrate, empty every table,
@@ -16,6 +17,7 @@ export default async function globalSetup() {
   config({ path: ".env.test", override: true, quiet: true });
   const url = process.env.TEST_DATABASE_URL;
   if (!url) throw new Error("TEST_DATABASE_URL is not set");
+  rmSync(E2E_OUTBOX, { recursive: true, force: true });
 
   const adminUrl = new URL(url);
   const dbName = decodeURIComponent(adminUrl.pathname.slice(1));
@@ -48,7 +50,9 @@ export default async function globalSetup() {
         if (created.error || !created.data.user) throw created.error ?? new Error(`Could not create ${u.email}`);
         id = created.data.user.id;
       }
-      await db.insert(schema.profiles).values({ userId: id, email: u.email, fullName: u.fullName, role: u.role });
+      await db
+        .insert(schema.profiles)
+        .values({ userId: id, email: u.email, fullName: u.fullName, role: u.role, canGetEmails: u === E2E_USERS.reset });
     }
   } finally {
     await client.end();
