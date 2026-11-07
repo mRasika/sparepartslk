@@ -1,8 +1,10 @@
+import { CircleCheck, TrendingUp, TriangleAlert } from "lucide-react";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { colomboDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/format";
 import { D, fmt } from "@/lib/money";
-import { type DayStatus, percentOf, type PlanDay } from "@/lib/sales-target";
+import { type DayStatus, paceGap, percentOf, type PlanDay } from "@/lib/sales-target";
 import { cn } from "@/lib/utils";
 import type { SessionUser } from "@/server/auth";
 import { type DailyTargetReport, getDailyTargetReport } from "@/server/services/sales-targets";
@@ -45,7 +47,7 @@ export async function TargetSection({ user }: { user: SessionUser }) {
     <Frame today={today}>
       <div className="grid gap-4">
         <TodayRow day={day} />
-        <MonthRow month={month} />
+        <MonthRow month={month} today={today} />
         <DaySquares days={month.days} today={today} />
       </div>
     </Frame>
@@ -97,14 +99,18 @@ function TodayRow({ day }: { day: DailyTargetReport["day"] }) {
   );
 }
 
-function MonthRow({ month }: { month: DailyTargetReport["month"] }) {
+function MonthRow({ month, today }: { month: DailyTargetReport["month"]; today: string }) {
   const trading = month.days.filter((d) => d.target !== null).length;
   const pct = percentOf(month.mtd, month.monthTarget);
+  const gap = paceGap(month, today);
   return (
     <Row label="Month">
-      <p className="text-sm tabular-nums">
-        <span className="font-semibold">{rs(month.mtd)}</span> of {rs(month.monthTarget)} · {trading} trading days
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm tabular-nums">
+          <span className="font-semibold">{rs(month.mtd)}</span> of {rs(month.monthTarget)} · {trading} trading days
+        </p>
+        {gap !== null && <PaceChip gap={gap} />}
+      </div>
       <Bar
         pct={pct}
         pace={percentOf(month.paceTarget, month.monthTarget)}
@@ -129,6 +135,28 @@ function MonthRow({ month }: { month: DailyTargetReport["month"] }) {
         )}
       </p>
     </Row>
+  );
+}
+
+/** Ahead of or behind where month sales should be (the amber mark), in one chip. */
+function PaceChip({ gap }: { gap: string }) {
+  const amount = D(gap);
+  const title = "Month sales against the target of the days done so far";
+  if (amount.isZero()) {
+    return (
+      <Badge variant="secondary" title={title}>
+        <CircleCheck aria-hidden /> On pace
+      </Badge>
+    );
+  }
+  return amount.greaterThan(0) ? (
+    <Badge title={title} className="bg-success/15 text-success">
+      <TrendingUp aria-hidden /> Ahead by {rs(gap)}
+    </Badge>
+  ) : (
+    <Badge title={title} className="bg-warning/20 text-warning-foreground">
+      <TriangleAlert aria-hidden /> Behind by {rs(fmt(amount.negated()))}
+    </Badge>
   );
 }
 
