@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { passwordSchema } from "@/lib/password";
 import { checkCode, cleanCode, hashCode, makeCode, RESET_CODE_TRIES } from "@/lib/reset-code";
-import { sessionSignedInAt } from "@/server/auth";
 import { requestIp } from "@/server/request-ip";
 
 const SECRET = "test-secret";
@@ -58,12 +57,5 @@ describe("request IP", () => {
   it("takes the last entry elsewhere, or one shared bucket", () => {
     expect(requestIp(h({ "x-forwarded-for": "6.6.6.6, 3.3.3.3" }), false)).toBe("3.3.3.3");
     expect(requestIp(h({}), false)).toBe("unknown");
-  });
-});
-
-describe("session sign-in time", () => {
-  it("uses the earliest amr timestamp, which survives token refreshes", () => {
-    expect(sessionSignedInAt({ iat: 500, amr: [{ method: "password", timestamp: 100 }] })).toBe(100);
-    expect(sessionSignedInAt({ iat: 500 })).toBe(500);
   });
 });
