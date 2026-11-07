@@ -29,7 +29,7 @@ async function main() {
   const { db } = await import("@/server/db/client");
   const { insertBaseData } = await import("@/server/db/base-data");
   const { profiles } = await import("@/server/db/schema");
-  const { createSupabaseAdminClient } = await import("@/server/supabase");
+  const { createLogin } = await import("@/server/auth-admin");
 
   try {
     await insertBaseData(db);
@@ -41,23 +41,7 @@ async function main() {
       return;
     }
 
-    const supabase = createSupabaseAdminClient();
-    let userId: string | undefined;
-    const created = await supabase.auth.admin.createUser({ email, password, email_confirm: true });
-    if (created.data.user) {
-      userId = created.data.user.id;
-    } else {
-      // The auth user may already exist from an earlier partial run.
-      const { data, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-      if (error) throw error;
-      userId = data.users.find((u) => u.email?.toLowerCase() === email)?.id;
-      if (!userId) throw created.error ?? new Error("Could not create the admin auth user");
-    }
-
-    await db
-      .insert(profiles)
-      .values({ userId, email, fullName: values["admin-name"]!, role: "admin" })
-      .onConflictDoNothing();
+    await createLogin({ email, name: values["admin-name"]!, password, role: "admin" });
     console.log(`Admin user ${email} is ready.`);
   } finally {
     await db.$client.end();

@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
-/** Test-only logins, created in local Supabase Auth by global-setup. */
+/** Test-only logins, created through createLogin by global-setup. */
 export const E2E_USERS = {
   admin: { email: "admin@test.local", password: "e2e-admin-pass-1", fullName: "Test Admin", role: "admin" as const },
   staff: { email: "staff@test.local", password: "e2e-staff-pass-1", fullName: "Test Staff", role: "staff" as const },
