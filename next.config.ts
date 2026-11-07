@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   // @react-pdf/renderer ships its own font/layout engines; keep it out of the server bundle.
   serverExternalPackages: ["@react-pdf/renderer"],
+  // A logo can be up to 1 MB; the form adds a little on top of the file.
+  experimental: { serverActions: { bodySizeLimit: "2mb" } },
   // pdfkit loads its built-in fonts through `#standard-fonts/*` subpath imports, which file tracing
   // doesn't follow, so the deployed PDF route crashed with "Cannot find module .../Helvetica.cjs".
   outputFileTracingIncludes: {
