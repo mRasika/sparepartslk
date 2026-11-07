@@ -9,8 +9,8 @@ describe("attentionItems", () => {
     expect(a.items).toEqual([
       {
         kind: "overdue",
-        title: "Rs 11,170.00 overdue",
-        detail: "Customers owe Rs 81,508.50 in total",
+        title: "Rs 11,170 overdue",
+        detail: "Customers owe Rs 81,509 in total",
         action: "Collect payments",
         href: "/payments?view=outstanding&overdue=1",
       },
@@ -47,7 +47,7 @@ describe("attentionItems", () => {
 
   it("still mentions money owed when none of it is overdue", () => {
     expect(attentionItems({ ...none, totalOutstanding: "81508.50" }).owedNote).toBe(
-      "Customers owe Rs 81,508.50 in total, none of it overdue.",
+      "Customers owe Rs 81,509 in total, none of it overdue.",
     );
   });
 });

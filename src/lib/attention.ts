@@ -1,4 +1,4 @@
-import { formatMoney } from "@/lib/format";
+import { formatRsShort } from "@/lib/format";
 import { D } from "@/lib/money";
 
 export type AttentionItem = {
@@ -25,8 +25,8 @@ export function attentionItems(d: {
   if (overdue) {
     items.push({
       kind: "overdue",
-      title: `Rs ${formatMoney(d.totalOverdue)} overdue`,
-      detail: `Customers owe Rs ${formatMoney(d.totalOutstanding)} in total`,
+      title: `${formatRsShort(d.totalOverdue)} overdue`,
+      detail: `Customers owe ${formatRsShort(d.totalOutstanding)} in total`,
       action: "Collect payments",
       href: "/payments?view=outstanding&overdue=1",
     });
@@ -50,6 +50,6 @@ export function attentionItems(d: {
     });
   }
   const owedNote =
-    owed && !overdue ? `Customers owe Rs ${formatMoney(d.totalOutstanding)} in total, none of it overdue.` : null;
+    owed && !overdue ? `Customers owe ${formatRsShort(d.totalOutstanding)} in total, none of it overdue.` : null;
   return { items, owedNote };
 }

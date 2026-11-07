@@ -1,5 +1,6 @@
 import { Percent, Plus, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
+import { StockLevel } from "@/components/stock-level";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -104,7 +105,7 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>SKU</TableHead>
+              <TableHead className="hidden sm:table-cell">SKU</TableHead>
               <TableHead>Name</TableHead>
               <TableHead className="hidden md:table-cell">OEM no</TableHead>
               <TableHead className="hidden lg:table-cell">Brand</TableHead>
@@ -125,15 +126,15 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
               </TableRow>
             )}
             {rows.map((p) => {
-              const low = p.reorderLevel > 0 && p.qtyOnHand <= p.reorderLevel;
               return (
                 <TableRow key={p.id}>
-                  <TableCell className="font-medium">
+                  <TableCell className="hidden font-medium sm:table-cell">
                     <Link href={`/parts/${p.id}`} className="hover:underline">
                       {p.sku}
                     </Link>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-normal">
+                    <span className="block text-xs font-medium text-muted-foreground sm:hidden">{p.sku}</span>
                     <Link href={`/parts/${p.id}`} className="hover:underline">
                       {p.name}
                     </Link>
@@ -147,9 +148,7 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
                   <TableCell className="hidden lg:table-cell">{p.brandName}</TableCell>
                   <TableCell className="hidden lg:table-cell">{p.binLocation}</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    <span className={low ? "rounded bg-warning/25 px-1.5 py-0.5 font-medium" : ""}>
-                      {p.qtyOnHand}
-                    </span>
+                    <StockLevel qty={p.qtyOnHand} reorderLevel={p.reorderLevel} active={p.isActive} />
                   </TableCell>
                 </TableRow>
               );

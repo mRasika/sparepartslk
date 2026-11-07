@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, moneyColumn } from "@/lib/format";
 import { requireUser } from "@/server/auth";
 import { listReturns } from "@/server/services/returns";
 
@@ -18,6 +18,7 @@ export default async function ReturnsPage() {
   await requireUser();
   const rows = await listReturns();
 
+  const totalColumn = moneyColumn(rows.map((r) => r.total));
   return (
     <div className="max-w-5xl">
       <PageHeader
@@ -62,7 +63,7 @@ export default async function ReturnsPage() {
                   </Link>
                 </TableCell>
                 <TableCell>{r.customerName}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatMoney(r.total)}</TableCell>
+                <TableCell className="text-right tabular-nums">{totalColumn(r.total)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
