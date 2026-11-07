@@ -53,6 +53,13 @@ describe("middleware", () => {
     expect(pattern.test("/logo.svg")).toBe(false);
     expect(pattern.test("/login")).toBe(false);
   });
+
+  it("lets the health check through without a session, but still guards the logo", () => {
+    const pattern = new RegExp(`^${config.matcher[0]}$`);
+    expect(pattern.test("/api/health")).toBe(false);
+    expect(pattern.test("/api/healthx")).toBe(true);
+    expect(pattern.test("/api/logo")).toBe(true);
+  });
 });
 
 describe("sessionUserFrom", () => {

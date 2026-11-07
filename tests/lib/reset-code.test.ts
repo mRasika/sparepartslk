@@ -52,10 +52,18 @@ describe("password rules", () => {
 describe("request IP", () => {
   const h = (init: Record<string, string>) => new Headers(init);
   it("takes Vercel's first x-forwarded-for entry and ignores cf-connecting-ip", () => {
-    expect(requestIp(h({ "x-forwarded-for": "1.1.1.1, 2.2.2.2", "cf-connecting-ip": "9.9.9.9" }), true)).toBe("1.1.1.1");
+    expect(requestIp(h({ "x-forwarded-for": "1.1.1.1, 2.2.2.2", "cf-connecting-ip": "9.9.9.9" }), true, "")).toBe("1.1.1.1");
   });
   it("takes the last entry elsewhere, or one shared bucket", () => {
-    expect(requestIp(h({ "x-forwarded-for": "6.6.6.6, 3.3.3.3" }), false)).toBe("3.3.3.3");
-    expect(requestIp(h({}), false)).toBe("unknown");
+    expect(requestIp(h({ "x-forwarded-for": "6.6.6.6, 3.3.3.3" }), false, "")).toBe("3.3.3.3");
+    expect(requestIp(h({}), false, "")).toBe("unknown");
+  });
+  it("reads the CLIENT_IP_HEADER header when it is set and present (Docker behind the tunnel)", () => {
+    const both = h({ "cf-connecting-ip": "9.9.9.9", "x-forwarded-for": "1.1.1.1" });
+    expect(requestIp(both, false, "cf-connecting-ip")).toBe("9.9.9.9");
+    expect(requestIp(both, true, "cf-connecting-ip")).toBe("9.9.9.9");
+  });
+  it("falls back to x-forwarded-for when that header is missing on the request", () => {
+    expect(requestIp(h({ "x-forwarded-for": "6.6.6.6, 3.3.3.3" }), false, "cf-connecting-ip")).toBe("3.3.3.3");
   });
 });
