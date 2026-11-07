@@ -71,6 +71,10 @@ describe("sales analytics: totals and trend", () => {
       grossProfit: "-1400.00",
       invoiceCount: 0,
     });
+    // The chart's day shows the returns behind a negative day.
+    expect(await getSalesTrend(todayOnly, "day")).toEqual([
+      { bucketStart: today, netSales: "-2000.00", grossProfit: "-1400.00", returns: "2000.00" },
+    ]);
   });
 
   it("handles a zero-subtotal invoice", async () => {
@@ -86,9 +90,9 @@ describe("sales analytics: totals and trend", () => {
 
     const points = await getSalesTrend({ from: addDays(today, -2), to: today }, "day");
     expect(points).toEqual([
-      { bucketStart: addDays(today, -2), netSales: "0.00", grossProfit: "0.00" },
-      { bucketStart: addDays(today, -1), netSales: "0.00", grossProfit: "0.00" },
-      { bucketStart: today, netSales: "1000.00", grossProfit: "400.00" },
+      { bucketStart: addDays(today, -2), netSales: "0.00", grossProfit: "0.00", returns: "0.00" },
+      { bucketStart: addDays(today, -1), netSales: "0.00", grossProfit: "0.00", returns: "0.00" },
+      { bucketStart: today, netSales: "1000.00", grossProfit: "400.00", returns: "0.00" },
     ]);
   });
 
@@ -108,8 +112,8 @@ describe("sales analytics: totals and trend", () => {
     await sell({ invoiceDate: today, lines: [{ partId: part.id, qty: 2 }] });
 
     expect(await getSalesTrend({ from: lastMonth, to: today }, "month")).toEqual([
-      { bucketStart: lastMonth, netSales: "1000.00", grossProfit: "400.00" },
-      { bucketStart: thisMonth, netSales: "2000.00", grossProfit: "800.00" },
+      { bucketStart: lastMonth, netSales: "1000.00", grossProfit: "400.00", returns: "0.00" },
+      { bucketStart: thisMonth, netSales: "2000.00", grossProfit: "800.00", returns: "0.00" },
     ]);
   });
 });

@@ -13,11 +13,16 @@ test("staff sees who owes and filters the list by how late", async ({ page }) =>
 
   await page.goto("/payments?view=outstanding&late=abc&by=xyz"); // bad params are ignored
 
-  for (const tile of ["Owed", "Overdue", "Due in next 7 days", "Days to collect"]) {
-    await expect(page.getByRole("term").filter({ hasText: new RegExp(`^${tile}$`) })).toBeVisible();
-  }
+  const term = (name: string) => page.getByRole("term").filter({ hasText: new RegExp(`^${name}$`) });
+  // One sentence says what is owed; the rest of the figures wait behind "More figures".
+  await expect(page.getByRole("region", { name: "What customers owe" })).toContainText(/Customers owe Rs [\d,.kM]+, from 1 customer\. None of it is late\./);
+  await expect(term("Due in next 7 days")).toBeHidden();
+  await page.getByText("More figures").click();
+  for (const tile of ["Due in next 7 days", "Customers pay after"]) await expect(term(tile)).toBeVisible();
+
   const who = page.getByRole("region", { name: "Who owes" });
-  await expect(who.getByRole("link", { name: "Nimal Perera" })).toBeVisible();
+  const nimal = who.getByRole("row").filter({ has: page.getByRole("link", { name: "Nimal Perera" }) });
+  await expect(nimal.getByText("On time")).toBeVisible(); // the invoice is dated today, so not due yet
 
   await page.getByRole("link", { name: /^Not due/ }).click();
   await expect(page).toHaveURL(/late=not-due/);

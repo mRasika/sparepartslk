@@ -1,24 +1,18 @@
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { passwordSchema } from "@/lib/password";
 import { requireRole, type Role, type SessionUser } from "@/server/auth";
+import { createLogin, endSessions, setPassword } from "@/server/auth-admin";
 import { db } from "@/server/db/client";
-import { profiles } from "@/server/db/schema";
+import { passwordResetCodes, profiles } from "@/server/db/schema";
 import { DomainError, InvalidState, NotFound } from "@/server/errors";
-import { createSupabaseAdminClient } from "@/server/supabase";
-
-/** The slice of Supabase's auth admin API we use; tests pass a fake. */
-export type AuthAdmin = {
-  createUser(args: { email: string; password: string; email_confirm: boolean }): Promise<{
-    data: { user: { id: string } | null };
-    error: { message: string } | null;
-  }>;
-};
 
 export const newUserSchema = z.object({
   email: z.email("Enter a valid email").transform((v) => v.trim().toLowerCase()),
   fullName: z.string().trim().min(1, "Name is required").max(80),
   role: z.enum(["admin", "staff"]),
-  password: z.string().min(8, "Use at least 8 characters").max(72),
+  password: passwordSchema,
+  canGetEmails: z.boolean().default(false),
 });
 
 export type NewUserInput = z.input<typeof newUserSchema>;
@@ -31,39 +25,27 @@ export async function listUsers() {
       fullName: profiles.fullName,
       role: profiles.role,
       isActive: profiles.isActive,
+      canGetEmails: profiles.canGetEmails,
       createdAt: profiles.createdAt,
     })
     .from(profiles)
     .orderBy(asc(profiles.fullName));
 }
 
-/** Creates the Supabase login (already confirmed) and the matching profile. Admin only. */
-export async function createUser(
-  user: SessionUser,
-  input: NewUserInput,
-  deps: { authAdmin?: AuthAdmin } = {},
-): Promise<{ id: string }> {
+/** Creates the login (password, ready to use) and the matching profile together. Admin only. */
+export async function createUser(user: SessionUser, input: NewUserInput): Promise<{ id: string }> {
   requireRole(user, "admin");
   const data = newUserSchema.parse(input);
   const [existing] = await db.select().from(profiles).where(eq(profiles.email, data.email));
   if (existing) throw new DomainError("Duplicate", `${data.email} already has an account`, { field: "email" });
 
-  const authAdmin = deps.authAdmin ?? createSupabaseAdminClient().auth.admin;
-  const { data: created, error } = await authAdmin.createUser({
+  return createLogin({
     email: data.email,
+    name: data.fullName,
     password: data.password,
-    email_confirm: true,
-  });
-  if (error || !created.user) {
-    throw new DomainError("AuthError", error?.message ?? "Could not create the login", { field: "email" });
-  }
-  await db.insert(profiles).values({
-    userId: created.user.id,
-    email: data.email,
-    fullName: data.fullName,
     role: data.role,
+    canGetEmails: data.canGetEmails,
   });
-  return { id: created.user.id };
 }
 
 async function otherActiveAdmins(userId: string): Promise<number> {
@@ -74,7 +56,10 @@ async function otherActiveAdmins(userId: string): Promise<number> {
   return row.n;
 }
 
-/** Turns a login on or off. An admin can't turn themself off (so there is always someone in charge). */
+/**
+ * Turns a login on or off. Turning it off also signs it out on every device. An admin can't turn
+ * themself off (so there is always someone in charge).
+ */
 export async function setUserActive(user: SessionUser, userId: string, active: boolean): Promise<void> {
   requireRole(user, "admin");
   if (!active && userId === user.id) throw new InvalidState("You can't turn off your own account");
@@ -83,7 +68,10 @@ export async function setUserActive(user: SessionUser, userId: string, active: b
   if (!active && target.role === "admin" && (await otherActiveAdmins(userId)) === 0) {
     throw new InvalidState("At least one active admin is needed");
   }
-  await db.update(profiles).set({ isActive: active }).where(eq(profiles.userId, userId));
+  await db.transaction(async (tx) => {
+    await tx.update(profiles).set({ isActive: active }).where(eq(profiles.userId, userId));
+    if (!active) await endSessions(userId, tx);
+  });
 }
 
 /** Changes a user's role. The last active admin can't be demoted. */
@@ -95,4 +83,40 @@ export async function setUserRole(user: SessionUser, userId: string, role: Role)
     throw new InvalidState("At least one active admin is needed");
   }
   await db.update(profiles).set({ role }).where(eq(profiles.userId, userId));
+}
+
+/**
+ * The admin's tick that this login's email is read only by that person, so "Forgot password?" may
+ * send a code to it. Turning it off also throws away any code already sent.
+ */
+export async function setCanGetEmails(user: SessionUser, userId: string, on: boolean): Promise<void> {
+  requireRole(user, "admin");
+  const updated = await db
+    .update(profiles)
+    .set({ canGetEmails: on })
+    .where(eq(profiles.userId, userId))
+    .returning({ id: profiles.userId });
+  if (updated.length === 0) throw new NotFound("User not found");
+  if (!on) await db.delete(passwordResetCodes).where(eq(passwordResetCodes.userId, userId));
+}
+
+/**
+ * Admin sets a new password for a login (works with or without email). That login is signed out on
+ * every device, and any password code already sent is thrown away.
+ */
+export async function setUserPassword(
+  user: SessionUser,
+  userId: string,
+  password: string,
+): Promise<void> {
+  requireRole(user, "admin");
+  const parsed = passwordSchema.safeParse(password);
+  if (!parsed.success) throw new DomainError("Validation", parsed.error.issues[0].message, { field: "password" });
+  const [target] = await db.select({ id: profiles.userId }).from(profiles).where(eq(profiles.userId, userId));
+  if (!target) throw new NotFound("User not found");
+
+  await db.transaction(async (tx) => {
+    await tx.delete(passwordResetCodes).where(eq(passwordResetCodes.userId, userId));
+    await setPassword(userId, password, tx);
+  });
 }

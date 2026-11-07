@@ -10,28 +10,48 @@ import {
   profiles,
   stockMovements,
   suppliers,
+  user,
 } from "@/server/db/schema";
 import type { Role, SessionUser } from "@/server/auth";
+import { createLogin } from "@/server/auth-admin";
 import type { PartInput } from "@/server/services/catalog";
 
 let counter = 0;
 
-/** Inserts a profile with a random user id (no Supabase auth user needed). */
+/** Inserts a profile with a random user id, with a matching Better Auth `user` row, no password. */
 export async function makeUser(
   role: Role,
-  overrides: Partial<{ fullName: string; email: string; isActive: boolean }> = {},
+  overrides: Partial<{ fullName: string; email: string; isActive: boolean; canGetEmails: boolean }> = {},
 ): Promise<SessionUser> {
   counter += 1;
   const id = randomUUID();
   const email = overrides.email ?? `${role}${counter}-${id.slice(0, 8)}@test.local`;
   const fullName = overrides.fullName ?? `Test ${role} ${counter}`;
-  await db.insert(profiles).values({
-    userId: id,
-    email,
-    fullName,
-    role,
-    isActive: overrides.isActive ?? true,
+  await db.transaction(async (tx) => {
+    await tx.insert(user).values({ id, email, name: fullName, emailVerified: true });
+    await tx.insert(profiles).values({
+      userId: id,
+      email,
+      fullName,
+      role,
+      isActive: overrides.isActive ?? true,
+      canGetEmails: overrides.canGetEmails ?? false,
+    });
   });
+  return { id, email, fullName, role };
+}
+
+export const LOGIN_PASSWORD = "factory-pass-1";
+
+/** Like makeUser, but a real login: user, credential account (password LOGIN_PASSWORD) and profile. */
+export async function makeLogin(
+  role: Role,
+  overrides: Partial<{ fullName: string; email: string; canGetEmails: boolean }> = {},
+): Promise<SessionUser> {
+  counter += 1;
+  const email = overrides.email ?? `${role}${counter}-${randomUUID().slice(0, 8)}@test.local`;
+  const fullName = overrides.fullName ?? `Test ${role} ${counter}`;
+  const { id } = await createLogin({ email, name: fullName, password: LOGIN_PASSWORD, role, canGetEmails: overrides.canGetEmails });
   return { id, email, fullName, role };
 }
 
@@ -39,9 +59,21 @@ const FACTORY_ADMIN_EMAIL = "factory-admin@test.local";
 
 /** A shared admin used as created_by for rows factories write (Ruling R4). */
 export async function factoryAdmin(): Promise<SessionUser> {
-  const [row] = await db.select().from(profiles).where(eq(profiles.email, FACTORY_ADMIN_EMAIL));
-  if (row) return { id: row.userId, email: row.email, fullName: row.fullName, role: row.role };
-  return makeUser("admin", { email: FACTORY_ADMIN_EMAIL, fullName: "Factory Admin" });
+  const existing = async () => {
+    const [row] = await db.select().from(profiles).where(eq(profiles.email, FACTORY_ADMIN_EMAIL));
+    return row && { id: row.userId, email: row.email, fullName: row.fullName, role: row.role };
+  };
+  const found = await existing();
+  if (found) return found;
+  try {
+    return await makeUser("admin", { email: FACTORY_ADMIN_EMAIL, fullName: "Factory Admin" });
+  } catch (e) {
+    // A parallel call in the same test made it first (user.email is unique); its transaction has
+    // committed by the time ours is refused, so read that one.
+    const again = await existing();
+    if (again) return again;
+    throw e;
+  }
 }
 
 export async function tierIds(): Promise<Record<"Retail" | "Dealer" | "Wholesale", string>> {

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { colomboDate } from "@/lib/dates";
 import { D, fmt, round2, sum } from "@/lib/money";
@@ -203,7 +203,8 @@ export async function returnableItems(invoiceId: string): Promise<ReturnableItem
   });
 }
 
-export async function listReturns(filters: { invoiceId?: string } = {}) {
+/** Credit notes, newest first; `from` / `to` filter on the return date (each optional). */
+export async function listReturns(filters: { invoiceId?: string; from?: string; to?: string } = {}) {
   return db
     .select({
       id: salesReturns.id,
@@ -211,6 +212,7 @@ export async function listReturns(filters: { invoiceId?: string } = {}) {
       returnDate: salesReturns.returnDate,
       invoiceId: salesReturns.invoiceId,
       invoiceNumber: invoices.number,
+      invoiceDate: invoices.invoiceDate,
       customerId: salesReturns.customerId,
       customerName: customers.name,
       reason: salesReturns.reason,
@@ -219,8 +221,14 @@ export async function listReturns(filters: { invoiceId?: string } = {}) {
     .from(salesReturns)
     .innerJoin(invoices, eq(invoices.id, salesReturns.invoiceId))
     .innerJoin(customers, eq(customers.id, salesReturns.customerId))
-    .where(filters.invoiceId ? eq(salesReturns.invoiceId, filters.invoiceId) : undefined)
-    .orderBy(desc(salesReturns.createdAt))
+    .where(
+      and(
+        filters.invoiceId ? eq(salesReturns.invoiceId, filters.invoiceId) : undefined,
+        filters.from ? gte(salesReturns.returnDate, filters.from) : undefined,
+        filters.to ? lte(salesReturns.returnDate, filters.to) : undefined,
+      ),
+    )
+    .orderBy(desc(salesReturns.returnDate), desc(salesReturns.createdAt))
     .limit(200);
 }
 

@@ -12,17 +12,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/format";
+import { colomboDate } from "@/lib/dates";
+import { formatDate, formatDayMonth, formatMoney, moneyColumn } from "@/lib/format";
 import { D } from "@/lib/money";
+import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth";
 import { NotFound } from "@/server/errors";
 import { customerStatement, getCustomer, type CustomerRow } from "@/server/services/customers";
 
-const STATEMENT_LABELS = {
-  INVOICE: "Invoice",
-  PAYMENT: "Payment",
-  CREDIT_NOTE: "Credit note",
-  REFUND: "Refund",
+/** What each statement line means for the customer, in plain words. */
+const STATEMENT_WORDS = {
+  INVOICE: "Bought",
+  PAYMENT: "Paid",
+  CREDIT_NOTE: "Returned",
+  REFUND: "Refunded",
 } as const;
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
@@ -36,6 +39,11 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
     throw e;
   }
   const statement = await customerStatement(customer.id);
+  const today = colomboDate();
+  // + adds to what they owe (invoices, refunds), − takes off it (payments, returns).
+  const amountOf = (r: (typeof statement.rows)[number]) => (r.debit === "0.00" ? r.credit : r.debit);
+  const amountColumn = moneyColumn(statement.rows.map(amountOf));
+  const owesColumn = moneyColumn(statement.rows.map((r) => r.balance.replace("-", "")));
 
   return (
     <div className="max-w-5xl">
@@ -96,40 +104,51 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Document</TableHead>
-                <TableHead className="text-right">Debit</TableHead>
-                <TableHead className="text-right">Credit</TableHead>
-                <TableHead className="text-right">Balance</TableHead>
+                <TableHead>What happened</TableHead>
+                <TableHead className="text-right">Amount (Rs)</TableHead>
+                <TableHead className="text-right">Owes after (Rs)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {statement.rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
                     No invoices or payments yet.
                   </TableCell>
                 </TableRow>
               )}
               {statement.rows.map((r) => (
                 <TableRow key={`${r.type}-${r.refId}`}>
-                  <TableCell className="whitespace-nowrap">{formatDate(r.date)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <time dateTime={r.date} title={formatDate(r.date)}>
+                      {formatDayMonth(r.date, today)}
+                    </time>
+                  </TableCell>
                   <TableCell>
+                    <span className="mr-2">{STATEMENT_WORDS[r.type]}</span>
                     {r.type === "INVOICE" ? (
-                      <Link href={`/invoices/${r.refId}`} className="font-medium hover:underline">
+                      <Link href={`/invoices/${r.refId}`} className="text-muted-foreground hover:underline">
                         {r.number}
                       </Link>
                     ) : r.type === "CREDIT_NOTE" ? (
-                      <Link href={`/returns/${r.refId}`} className="font-medium hover:underline">
+                      <Link href={`/returns/${r.refId}`} className="text-muted-foreground hover:underline">
                         {r.number}
                       </Link>
                     ) : (
-                      <span className="font-medium">{r.number}</span>
+                      <span className="text-muted-foreground">{r.number}</span>
                     )}
-                    <span className="ml-2 text-xs text-muted-foreground">{STATEMENT_LABELS[r.type]}</span>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{r.debit === "0.00" ? "" : formatMoney(r.debit)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{r.credit === "0.00" ? "" : formatMoney(r.credit)}</TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">{formatMoney(r.balance)}</TableCell>
+                  <TableCell className={cn("text-right tabular-nums", r.debit === "0.00" && "text-success")}>
+                    {r.debit === "0.00" ? "−" : "+"}
+                    {amountColumn(amountOf(r))}
+                  </TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {r.balance.startsWith("-") ? (
+                      <span className="text-muted-foreground">Credit {owesColumn(r.balance.replace("-", ""))}</span>
+                    ) : (
+                      owesColumn(r.balance)
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

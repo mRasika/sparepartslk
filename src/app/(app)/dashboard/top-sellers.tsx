@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatMoney } from "@/lib/format";
+import { moneyColumn } from "@/lib/format";
 import { marginPct } from "@/lib/sales-metrics";
 import type { TopDimension, TopSellerRow, TopSort } from "@/server/services/sales-analytics";
 
@@ -29,6 +29,8 @@ export function TopSellers({
   sort: TopSort;
   hrefFor: (change: { top?: TopDimension; sort?: TopSort }) => string;
 }) {
+  const salesColumn = moneyColumn(rows.map((r) => r.netSales));
+  const profitColumn = moneyColumn(rows.map((r) => r.grossProfit));
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex flex-col gap-2 border-b p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -69,8 +71,8 @@ export function TopSellers({
               <TableHead className="w-10">#</TableHead>
               <TableHead>Name</TableHead>
               <TableHead className="hidden text-right sm:table-cell">Qty</TableHead>
-              <TableHead className="text-right">Sales</TableHead>
-              <TableHead className="text-right">Profit</TableHead>
+              <TableHead className="text-right">Sales (Rs)</TableHead>
+              <TableHead className="text-right">Profit (Rs)</TableHead>
               <TableHead className="hidden text-right sm:table-cell">Margin</TableHead>
             </TableRow>
           </TableHeader>
@@ -85,8 +87,8 @@ export function TopSellers({
                     {r.detail && <span className="ml-2 text-xs text-muted-foreground">{r.detail}</span>}
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">{r.qty}</TableCell>
-                  <TableCell className="text-right tabular-nums">Rs {formatMoney(r.netSales)}</TableCell>
-                  <TableCell className="text-right tabular-nums">Rs {formatMoney(r.grossProfit)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{salesColumn(r.netSales)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{profitColumn(r.grossProfit)}</TableCell>
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">
                     {margin === null ? "—" : `${margin}%`}
                   </TableCell>

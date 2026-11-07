@@ -3,7 +3,7 @@ import { colomboDate } from "@/lib/dates";
 import { D, fmt, sum } from "@/lib/money";
 import { requireRole, type SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
-import { invoices, parts, stockReconciliationIssues } from "@/server/db/schema";
+import { invoices, parts, salesReturns, stockReconciliationIssues } from "@/server/db/schema";
 import { NotFound } from "@/server/errors";
 import { outstandingInvoices } from "@/server/services/customers";
 import { lowStockCount } from "@/server/services/inventory";
@@ -20,6 +20,9 @@ export type ReconciliationIssue = {
 export type Dashboard = {
   todaySales: string;
   todayInvoiceCount: number;
+  /** Credit notes dated today, with VAT like `todaySales`. */
+  todayReturns: string;
+  todayReturnCount: number;
   lowStockCount: number;
   totalOutstanding: string;
   totalOverdue: string;
@@ -29,7 +32,7 @@ export type Dashboard = {
 /** The day at a glance (spec §3.10). Reconciliation issues are for admins only. */
 export async function getDashboard(user: SessionUser): Promise<Dashboard> {
   const today = colomboDate();
-  const [[sales], low, open] = await Promise.all([
+  const [[sales], [returned], low, open] = await Promise.all([
     db
       .select({
         total: sql<string>`coalesce(sum(${invoices.total}), 0)::numeric(12, 2)::text`,
@@ -37,6 +40,13 @@ export async function getDashboard(user: SessionUser): Promise<Dashboard> {
       })
       .from(invoices)
       .where(and(eq(invoices.invoiceDate, today), eq(invoices.status, "issued"))),
+    db
+      .select({
+        total: sql<string>`coalesce(sum(${salesReturns.total}), 0)::numeric(12, 2)::text`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(salesReturns)
+      .where(eq(salesReturns.returnDate, today)),
     lowStockCount(),
     outstandingInvoices(),
   ]);
@@ -44,6 +54,8 @@ export async function getDashboard(user: SessionUser): Promise<Dashboard> {
   const dashboard: Dashboard = {
     todaySales: sales.total,
     todayInvoiceCount: sales.count,
+    todayReturns: returned.total,
+    todayReturnCount: returned.count,
     lowStockCount: low,
     totalOutstanding: fmt(sum(open.map((o) => D(o.outstanding)))),
     totalOverdue: fmt(sum(open.filter((o) => o.daysOverdue > 0).map((o) => D(o.outstanding)))),

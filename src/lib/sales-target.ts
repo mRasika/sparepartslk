@@ -107,6 +107,20 @@ export function monthPlan(input: {
 }
 
 /** Whole percent of `of`, never below 0; 0 when there is nothing to measure against. */
+/**
+ * Month sales minus where they should be (`paceTarget`), while the month is still open. Today counts
+ * only once its target is hit: before that the gap is about the days already done, and today's
+ * shortfall is shown on its own. Positive = ahead, negative = behind; null once the month is decided.
+ */
+export function paceGap(plan: MonthPlan, reportDate: string): string | null {
+  if (!plan.hasTarget || plan.outcome !== "open") return null;
+  const today = plan.days.find((d) => d.date === reportDate);
+  if (today?.status === "in-progress" && today.target !== null) {
+    return fmt(D(plan.mtd).minus(today.sales).minus(D(plan.paceTarget).minus(today.target)));
+  }
+  return fmt(D(plan.mtd).minus(plan.paceTarget));
+}
+
 export function percentOf(value: string, of: string): number {
   if (D(of).lte(0)) return 0;
   return Math.max(0, Math.round(D(value).div(of).times(100).toNumber()));

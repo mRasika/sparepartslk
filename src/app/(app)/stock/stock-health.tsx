@@ -1,6 +1,10 @@
+import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
+import { Amount } from "@/components/amount";
+import { MoreFigures } from "@/components/more-figures";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/format";
+import { colomboDate } from "@/lib/dates";
+import { formatDate, formatDays, formatSince, moneyColumn } from "@/lib/format";
 import { D } from "@/lib/money";
 import type { AbcClass, StockAgeBand, StockHealth } from "@/lib/stock-health";
 import { cn } from "@/lib/utils";
@@ -28,18 +32,35 @@ export function StockHealthSummary({
   hrefFor: (f: { age?: StockAgeBand; cls?: AbcClass }) => string;
 }) {
   const value = D(h.stockValue);
+  const fastLow = h.classes.find((c) => c.key === "A")?.lowOrOut ?? 0;
+  const today = colomboDate();
+  const stuckValue = moneyColumn(h.stuck.map((x) => x.value));
   return (
     <div className="mb-6 flex flex-col gap-4">
-      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Tile label="Stock value" value={`Rs ${formatMoney(h.stockValue)}`} note={`${plural(h.partsInStock, "part", "parts")} in stock`} />
-        <Tile label="Slow & dead" value={`Rs ${formatMoney(h.slowValue)}`} note={`${h.slowPct}% · ${plural(h.slowParts, "part", "parts")}`} />
-        <Tile label="Turns per year" value={h.turnsPerYear === null ? "—" : `${h.turnsPerYear}×`} note="last 90 days" />
-        <Tile
-          label="Days of stock"
-          value={h.daysOfStock === null ? "—" : plural(h.daysOfStock, "day", "days")}
-          note={h.daysOfStock === null ? "no sales in 90 days" : "at the current sales pace"}
-        />
-      </dl>
+      <section aria-label="Stock on the shelves" className="rounded-lg border bg-card p-4 sm:p-5">
+        <p className="text-lg leading-snug">
+          <Amount value={h.stockValue} className="font-semibold tabular-nums" /> on the shelves, in{" "}
+          {plural(h.partsInStock, "part", "parts")}.{" "}
+          {D(h.slowValue).greaterThan(0) ? (
+            <span>
+              <Amount value={h.slowValue} className="font-semibold tabular-nums" /> of it ({h.slowPct}%,{" "}
+              {plural(h.slowParts, "part", "parts")}) hasn&apos;t sold in 6 months.
+            </span>
+          ) : (
+            <span className="text-muted-foreground">All of it has sold in the last 6 months.</span>
+          )}
+        </p>
+      </section>
+      {fastLow > 0 && (
+        <Link
+          href={hrefFor({ cls: "A" })}
+          scroll={false}
+          className="flex w-fit items-center gap-2 rounded-lg border border-warning bg-warning/15 px-3 py-2 text-sm font-medium text-warning-foreground hover:bg-warning/25"
+        >
+          <TriangleAlert aria-hidden className="size-4" />
+          {plural(fastLow, "best seller is", "best sellers are")} low or out of stock
+        </Link>
+      )}
 
       {value.greaterThan(0) && (
         <section aria-labelledby="stock-age" className="rounded-lg border bg-card p-4 sm:p-5">
@@ -58,33 +79,12 @@ export function StockHealthSummary({
               <li key={b.key}>
                 <FilterLink href={hrefFor({ age: b.key })} active={age === b.key}>
                   <span className={cn("inline-block size-2.5 rounded-sm", BAND_COLOR[b.key])} aria-hidden />
-                  {b.label} · Rs {formatMoney(b.value)}
+                  <span>
+                    {b.label} · <Amount value={b.value} />
+                  </span>
                 </FilterLink>
               </li>
             ))}
-          </ul>
-        </section>
-      )}
-
-      {h.classes.some((c) => c.parts > 0) && (
-        <section aria-labelledby="sales-classes" className="rounded-lg border bg-card p-4 sm:p-5">
-          <h2 id="sales-classes" className="text-sm text-muted-foreground">
-            Sales classes (last 12 months)
-          </h2>
-          <ul className="mt-2 flex flex-col gap-0.5 text-sm">
-            {h.classes
-              .filter((c) => c.parts > 0)
-              .map((c) => (
-                <li key={c.key}>
-                  <FilterLink href={hrefFor({ cls: c.key })} active={cls === c.key}>
-                    {c.label} · {plural(c.parts, "part", "parts")}
-                    {c.salesPct !== null && ` · ${c.salesPct}% of sales`} · Rs {formatMoney(c.stockValue)} in stock
-                    {c.key === "A" && c.lowOrOut > 0 && (
-                      <span className="font-medium text-warning-foreground"> · {c.lowOrOut} low or out of stock</span>
-                    )}
-                  </FilterLink>
-                </li>
-              ))}
           </ul>
         </section>
       )}
@@ -99,7 +99,7 @@ export function StockHealthSummary({
               <TableRow>
                 <TableHead>Part</TableHead>
                 <TableHead className="text-right">On hand</TableHead>
-                <TableHead className="text-right">Value</TableHead>
+                <TableHead className="text-right">Value (Rs)</TableHead>
                 <TableHead className="hidden md:table-cell">Last sold</TableHead>
                 <TableHead>Class</TableHead>
               </TableRow>
@@ -114,8 +114,16 @@ export function StockHealthSummary({
                     <span className="text-muted-foreground">{s.name}</span>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{s.qtyOnHand}</TableCell>
-                  <TableCell className="text-right tabular-nums">Rs {formatMoney(s.value)}</TableCell>
-                  <TableCell className="hidden whitespace-nowrap md:table-cell">{s.lastSoldOn ? formatDate(s.lastSoldOn) : "Never"}</TableCell>
+                  <TableCell className="text-right tabular-nums">{stuckValue(s.value)}</TableCell>
+                  <TableCell className="hidden whitespace-nowrap md:table-cell">
+                    {s.lastSoldOn ? (
+                      <time dateTime={s.lastSoldOn} title={formatDate(s.lastSoldOn)}>
+                        {formatSince(s.lastSoldOn, today)}
+                      </time>
+                    ) : (
+                      "Never"
+                    )}
+                  </TableCell>
                   <TableCell>{classLabel(s.cls)}</TableCell>
                 </TableRow>
               ))}
@@ -123,6 +131,44 @@ export function StockHealthSummary({
           </Table>
         </section>
       )}
+      <MoreFigures open={cls !== null}>
+        <dl className="grid grid-cols-2 gap-4">
+          <Tile
+            label="Sells through"
+            value={h.turnsPerYear === null ? "—" : `${h.turnsPerYear}× a year`}
+            note="how often the whole stock is sold and refilled, last 90 days"
+          />
+          <Tile
+            label="Stock lasts"
+            value={h.daysOfStock === null ? "—" : formatDays(h.daysOfStock)}
+            note={h.daysOfStock === null ? "no sales in 90 days" : "at the current sales pace"}
+          />
+        </dl>
+        {h.classes.some((c) => c.parts > 0) && (
+          <section aria-labelledby="sales-classes">
+            <h2 id="sales-classes" className="text-sm text-muted-foreground">
+              Sales classes (last 12 months)
+            </h2>
+            <ul className="mt-2 flex flex-col gap-0.5 text-sm">
+              {h.classes
+                .filter((c) => c.parts > 0)
+                .map((c) => (
+                  <li key={c.key}>
+                    <FilterLink href={hrefFor({ cls: c.key })} active={cls === c.key}>
+                      <span>
+                        {c.label} · {plural(c.parts, "part", "parts")}
+                        {c.salesPct !== null && ` · ${c.salesPct}% of sales`} · <Amount value={c.stockValue} /> in stock
+                        {c.key === "A" && c.lowOrOut > 0 && (
+                          <span className="font-medium text-warning-foreground"> · {c.lowOrOut} low or out of stock</span>
+                        )}
+                      </span>
+                    </FilterLink>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        )}
+      </MoreFigures>
     </div>
   );
 }
@@ -142,7 +188,7 @@ function FilterLink({ href, active, children }: { href: string; active: boolean;
   );
 }
 
-function Tile({ label, value, note }: { label: string; value: string; note: string }) {
+function Tile({ label, value, note }: { label: string; value: React.ReactNode; note: string }) {
   return (
     <div className="rounded-lg border bg-card p-4 sm:p-5">
       <dt className="text-sm text-muted-foreground">{label}</dt>

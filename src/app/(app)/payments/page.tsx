@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table";
 import { AGING_GROUPS, agingGroup, isAgingGroupKey, outstandingHref, type AgingGroupKey } from "@/lib/aging";
 import { colomboDate } from "@/lib/dates";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, moneyColumn } from "@/lib/format";
 import { D, fmt, sum } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth";
@@ -94,6 +94,8 @@ function ViewSkeleton() {
 
 async function Received({ q }: { q: string }) {
   const rows = await listPayments({ q });
+  const appliedColumn = moneyColumn(rows.map((p) => p.allocated));
+  const amountColumn = moneyColumn(rows.map((p) => p.amount));
   return (
     <>
       <form className="mb-4 flex gap-2" role="search">
@@ -148,9 +150,9 @@ async function Received({ q }: { q: string }) {
                   {METHOD_LABELS[p.method]}
                   {p.reference && <div className="text-xs text-muted-foreground">{p.reference}</div>}
                 </TableCell>
-                <TableCell className="hidden text-right tabular-nums lg:table-cell">{formatMoney(p.allocated)}</TableCell>
+                <TableCell className="hidden text-right tabular-nums lg:table-cell">{appliedColumn(p.allocated)}</TableCell>
                 <TableCell className={cn("text-right tabular-nums", p.status === "cancelled" && "line-through")}>
-                  {formatMoney(p.amount)}
+                  {amountColumn(p.amount)}
                 </TableCell>
               </TableRow>
             ))}
@@ -177,6 +179,8 @@ async function Outstanding({
   const rows = late ? all.filter((r) => agingGroup(r.dueDate, today) === late) : all;
   const total = fmt(sum(rows.map((r) => D(r.outstanding))));
   const lateLabel = AGING_GROUPS.find((g) => g.key === late)?.label;
+  const totalColumn = moneyColumn(rows.map((r) => r.total));
+  const owedColumn = moneyColumn([...rows.map((r) => r.outstanding), total]);
   return (
     <>
       <CreditSummary summary={summary} late={late} by={by} overdueOnly={overdueOnly} />
@@ -212,7 +216,7 @@ async function Outstanding({
               <TableHead>Customer</TableHead>
               <TableHead className="hidden md:table-cell">Invoiced</TableHead>
               <TableHead>Due</TableHead>
-              <TableHead className="hidden text-right sm:table-cell">Total</TableHead>
+              <TableHead className="hidden text-right sm:table-cell">Total (Rs)</TableHead>
               <TableHead className="text-right">Owed (Rs)</TableHead>
             </TableRow>
           </TableHeader>
@@ -245,8 +249,8 @@ async function Outstanding({
                     </div>
                   )}
                 </TableCell>
-                <TableCell className="hidden text-right tabular-nums sm:table-cell">{formatMoney(r.total)}</TableCell>
-                <TableCell className="text-right font-medium tabular-nums">{formatMoney(r.outstanding)}</TableCell>
+                <TableCell className="hidden text-right tabular-nums sm:table-cell">{totalColumn(r.total)}</TableCell>
+                <TableCell className="text-right font-medium tabular-nums">{owedColumn(r.outstanding)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -256,7 +260,7 @@ async function Outstanding({
                 <TableCell colSpan={5} className="text-right font-medium">
                   {late ? "Total in group" : overdueOnly ? "Total overdue" : "Total owed"}
                 </TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{formatMoney(total)}</TableCell>
+                <TableCell className="text-right font-semibold tabular-nums">{owedColumn(total)}</TableCell>
               </TableRow>
             </TableFooter>
           )}

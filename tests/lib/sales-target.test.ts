@@ -3,6 +3,7 @@ import {
   isoWeekday,
   isTradingDay,
   monthPlan,
+  paceGap,
   parseReportDate,
   percentOf,
   targetOn,
@@ -158,6 +159,29 @@ describe("monthPlan", () => {
     const feb = (y: number) => plan({ reportDate: `${y}-02-10`, today: `${y}-02-10` }).days.length;
     expect(feb(2027)).toBe(28);
     expect(feb(2028)).toBe(29);
+  });
+});
+
+describe("paceGap", () => {
+  // Up to 26 Oct there are 22 trading days: the pace is Rs 5,500,000, of which Rs 250,000 is today.
+  it("leaves today out while it is in progress", () => {
+    expect(paceGap(plan(), T)).toBe("-5250000.00");
+    expect(paceGap(plan({ dailySales: { "2026-10-23": "5400000.00", [T]: "100000.00" } }), T)).toBe("150000.00");
+  });
+
+  it("counts today once its target is hit", () => {
+    expect(paceGap(plan({ dailySales: { "2026-10-23": "5000000.00", [T]: "300000.00" } }), T)).toBe("-200000.00");
+  });
+
+  it("counts sales on a closed day", () => {
+    const sunday = "2026-10-25"; // 21 trading days before it: pace Rs 5,250,000
+    const p = plan({ reportDate: sunday, today: sunday, dailySales: { [sunday]: "50000.00" } });
+    expect(paceGap(p, sunday)).toBe("-5200000.00");
+  });
+
+  it("has no gap once the month is decided or without a target", () => {
+    expect(paceGap(plan({ dailySales: { "2026-10-23": "7000000.00" } }), T)).toBeNull();
+    expect(paceGap(plan({ rows: [] }), T)).toBeNull();
   });
 });
 

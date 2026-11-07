@@ -1,8 +1,9 @@
 "use client";
 
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from "recharts";
-import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { type ChartConfig, ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import { formatMoney } from "@/lib/format";
+import { D, fmt } from "@/lib/money";
 import { type Bucket, bucketLabel } from "@/lib/periods";
 import type { TrendPoint } from "@/server/services/sales-analytics";
 
@@ -55,20 +56,7 @@ export function SalesTrendChart({ points, bucket }: { points: TrendPoint[]; buck
             <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={16} />
             <YAxis tickLine={false} axisLine={false} width={44} tickFormatter={shortMoney} />
             <ReferenceLine y={0} stroke="var(--border)" />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(_value, name, item) => (
-                    <div className="flex w-full justify-between gap-4">
-                      <span className="text-muted-foreground">{config[name as keyof typeof config].label}</span>
-                      <span className="font-mono font-medium tabular-nums">
-                        Rs {formatMoney(item.payload.exact[name as keyof typeof config])}
-                      </span>
-                    </div>
-                  )}
-                />
-              }
-            />
+            <ChartTooltip content={<TrendTooltip />} />
             <Bar dataKey="netSales" fill="var(--color-netSales)" radius={[4, 4, 0, 0]} />
             <Line
               dataKey="grossProfit"
@@ -81,6 +69,61 @@ export function SalesTrendChart({ points, bucket }: { points: TrendPoint[]; buck
           </ComposedChart>
         </ChartContainer>
       )}
+    </div>
+  );
+}
+
+/**
+ * One bucket's exact amounts. When returns were dated in it, sales and returns are shown apart, so a
+ * low or negative bar explains itself (returns count on their own date, not on the sale's).
+ */
+function TrendTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { payload: { exact: TrendPoint } }[];
+  label?: string;
+}) {
+  const p = payload?.[0]?.payload.exact;
+  if (!active || !p) return null;
+  const returned = D(p.returns).greaterThan(0);
+  return (
+    <div className="grid min-w-40 gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+      <p className="font-medium">{label}</p>
+      {returned && (
+        <>
+          <TooltipRow label="Sales" value={`Rs ${formatMoney(fmt(D(p.netSales).plus(p.returns)))}`} />
+          <TooltipRow label="Returns" value={`−Rs ${formatMoney(p.returns)}`} className="text-destructive" />
+        </>
+      )}
+      <TooltipRow label="Net sales" value={`Rs ${formatMoney(p.netSales)}`} swatch="bg-chart-1" strong={returned} />
+      <TooltipRow label="Gross profit" value={`Rs ${formatMoney(p.grossProfit)}`} swatch="bg-chart-2" />
+    </div>
+  );
+}
+
+function TooltipRow({
+  label,
+  value,
+  swatch,
+  strong,
+  className,
+}: {
+  label: string;
+  value: string;
+  swatch?: string;
+  strong?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={`flex w-full items-center justify-between gap-4 ${strong ? "border-t pt-1.5" : ""}`}>
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        {swatch ? <span aria-hidden className={`size-2.5 rounded-sm ${swatch}`} /> : <span aria-hidden className="size-2.5" />}
+        {label}
+      </span>
+      <span className={`font-mono font-medium tabular-nums ${className ?? ""}`}>{value}</span>
     </div>
   );
 }

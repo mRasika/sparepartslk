@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, moneyColumn } from "@/lib/format";
 import { requireUser } from "@/server/auth";
 import { countInvoiceDrafts } from "@/server/services/invoice-drafts";
 import { listInvoices } from "@/server/services/invoicing";
@@ -35,6 +35,8 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Sea
   ]);
   const filtered = Boolean(q || status || from || to || unpaid);
 
+  const totalColumn = moneyColumn(rows.map((r) => r.total));
+  const owedColumn = moneyColumn(rows.map((r) => r.outstanding));
   return (
     <div>
       <PageHeader
@@ -110,10 +112,10 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Sea
                 <TableCell>{r.customerName}</TableCell>
                 <TableCell className="hidden capitalize sm:table-cell">{r.paymentType}</TableCell>
                 <TableCell className={`text-right tabular-nums ${r.status === "cancelled" ? "line-through" : ""}`}>
-                  {formatMoney(r.total)}
+                  {totalColumn(r.total)}
                 </TableCell>
                 <TableCell className="hidden text-right tabular-nums md:table-cell">
-                  {r.outstanding === "0.00" ? <span className="text-muted-foreground">–</span> : formatMoney(r.outstanding)}
+                  {r.outstanding === "0.00" ? <span className="text-muted-foreground">–</span> : owedColumn(r.outstanding)}
                 </TableCell>
               </TableRow>
             ))}

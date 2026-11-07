@@ -22,8 +22,9 @@ Design: [`docs/superpowers/specs/2026-10-22-stock-billing-mvp-design.md`](docs/s
 
 ```sh
 pnpm install
-pnpm supabase start          # Postgres + Auth in Docker; prints the keys
-cp .env.example .env.local   # paste the anon and service_role keys printed above
+pnpm supabase start          # Postgres (and Storage) in Docker; prints the keys
+cp .env.example .env.local   # paste the anon and service_role keys printed above,
+                             # and set BETTER_AUTH_SECRET (openssl rand -hex 32)
 pnpm db:migrate
 pnpm db:seed -- --admin-email you@example.com --admin-password 'choose-a-password'
 pnpm dev                     # http://localhost:3000
@@ -60,7 +61,7 @@ To start the local database over: `pnpm supabase db reset`, then `pnpm db:migrat
 
    ```sh
    DIRECT_URL='postgresql://…:5432/postgres' DATABASE_URL="$DIRECT_URL" pnpm db:migrate
-   NEXT_PUBLIC_SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… DATABASE_URL="$DIRECT_URL" \
+   DATABASE_URL="$DIRECT_URL" \
      pnpm db:seed -- --admin-email owner@yourshop.lk --admin-password '…'
    ```
 
@@ -71,11 +72,11 @@ To start the local database over: `pnpm supabase db reset`, then `pnpm db:migrat
    under **Settings**. To create it by hand: Storage → New bucket → `branding`, public.
 5. **Deploy to Vercel.** Import the repo and set these environment variables (Production and Preview):
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
-   `DATABASE_URL` (pooler URL), `DIRECT_URL`.
+   `DATABASE_URL` (pooler URL), `DIRECT_URL`, and `BETTER_AUTH_SECRET` (`openssl rand -hex 32`, the same value
+   for Production and Preview as they share the database).
    Optional features are off until you set their variable to `1` and redeploy. Turn one on only when the owner
    asks for it: `FEATURE_SALES_TARGET` adds the daily sales target (dashboard card, Settings section, daily
    report PDF). Turning it off again only hides it; saved targets are kept.
-6. In Supabase **Authentication → URL configuration**, set the Site URL to the Vercel domain.
 
 Backups: Supabase takes daily backups. Issued documents are never deleted, as tax records must be kept for at least 5 years.
 
@@ -93,7 +94,8 @@ fields on ird.gov.lk / documents.gov.lk** and adjust `src/components/print/invoi
   service (`src/server/services`). Each service runs one database transaction that locks the affected parts rows.
 - Stock lives in two places kept in step: the append-only `stock_movements` ledger and the cached
   `parts.qty_on_hand`. `reconcile_stock()` compares them nightly.
-- Supabase provides Postgres and Auth only. Data access goes through Drizzle on the server; row-level security
-  is on for every table with no policies, so the browser can't read data directly.
+- Supabase provides Postgres (and Storage for the logo). Logins and sessions are Better Auth tables in the same
+  Postgres (`src/server/better-auth.ts`, `src/server/auth-admin.ts`). Data access goes through Drizzle on the
+  server; row-level security is on for every table with no policies, so the browser can't read data directly.
 - Money is `numeric(12,2)` and all arithmetic uses decimal.js (`src/lib/money.ts`), rounding half-up.
 - Business dates and document-number years use Asia/Colombo time.
