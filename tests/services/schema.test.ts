@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db/client";
 import {
+  account,
   closedDays,
   customers,
   parts,
@@ -10,9 +11,10 @@ import {
   quotations,
   salesTargets,
   settings,
+  user,
 } from "@/server/db/schema";
 import { pgErrorCode, resetDb } from "../helpers/db";
-import { factoryAdmin, makePart, tierIds } from "../helpers/factories";
+import { factoryAdmin, makePart, makeUser, tierIds } from "../helpers/factories";
 
 async function insertPart(sku: string, qty = 0) {
   const [row] = await db
@@ -192,5 +194,31 @@ describe("sales targets", () => {
     const close = () => db.insert(closedDays).values({ day: "2026-10-30", reason: "Poya", createdBy: admin.id });
     await close();
     expect(await pgErrorCode(close())).toBe("23505");
+  });
+});
+
+describe("auth tables", () => {
+  beforeEach(resetDb);
+
+  it("allows one credential account per user", async () => {
+    const [u] = await db.insert(user).values({ email: "one@test.local", name: "One" }).returning();
+    const cred = () =>
+      db.insert(account).values({ accountId: u.id, providerId: "credential", userId: u.id, password: "$2a$10$x" });
+    await cred();
+    expect(await pgErrorCode(cred())).toBe("23505");
+  });
+
+  it("makeUser also writes a Better Auth user row with the same id", async () => {
+    const staff = await makeUser("staff");
+    const [row] = await db.select().from(user).where(eq(user.id, staff.id));
+    expect(row).toMatchObject({ email: staff.email, name: staff.fullName, emailVerified: true });
+  });
+
+  it("has row level security on every public table (Supabase's REST API must not read them)", async () => {
+    const rows = await db.execute<{ relname: string }>(sql`
+      select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity
+        and c.relname <> '__drizzle_migrations'`);
+    expect(rows.map((r) => r.relname)).toEqual([]);
   });
 });
