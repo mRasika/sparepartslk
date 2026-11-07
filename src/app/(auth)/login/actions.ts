@@ -1,14 +1,17 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { loadActiveUser } from "@/server/auth";
-import { createSupabaseServerClient } from "@/server/supabase";
+import { auth } from "@/server/better-auth";
+import { requestIp } from "@/server/request-ip";
+import { signIn } from "@/server/services/sign-in";
 
 export type LoginState = { error?: string; email?: string };
 
 const loginSchema = z.object({
-  email: z.email("Enter a valid email address"),
+  // Trimmed before the check, so an email pasted with a space still signs in.
+  email: z.string().trim().pipe(z.email("Enter a valid email address")),
   password: z.string().min(1, "Enter your password"),
 });
 
@@ -20,25 +23,14 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   const email = String(formData.get("email") ?? "");
   if (!parsed.success) return { error: parsed.error.issues[0].message, email };
 
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
-  if (error || !data.user) {
-    // A wrong password is expected; anything else (Supabase unreachable, bad config) must reach the server logs.
-    if (error?.code !== "invalid_credentials") console.error("Sign-in failed", error);
-    return { error: "Email or password is incorrect", email };
-  }
-
-  const user = await loadActiveUser(data.user.id);
-  if (!user) {
-    await supabase.auth.signOut();
-    return { error: "This account is turned off. Ask the owner to turn it back on.", email };
-  }
+  const requestHeaders = await headers();
+  const result = await signIn({ ...parsed.data, ip: requestIp(requestHeaders), headers: requestHeaders });
+  if (!result.ok) return { error: result.error, email };
 
   redirect("/dashboard");
 }
 
 export async function logoutAction(): Promise<void> {
-  const supabase = await createSupabaseServerClient();
-  await supabase.auth.signOut();
+  await auth.api.signOut({ headers: await headers() }).catch((e) => console.error("Sign-out failed", e));
   redirect("/login");
 }

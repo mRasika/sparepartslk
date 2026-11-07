@@ -21,3 +21,8 @@ export async function takeLimit(key: string, max: number, windowMs: number, now 
     returning count`);
   return Number(rows[0]?.count ?? Infinity) <= max;
 }
+
+/** Hands one use of `key` back (a success that shouldn't count). One statement; never below 0. */
+export async function giveBack(key: string): Promise<void> {
+  await db.execute(sql`update rate_limits set count = greatest(count - 1, 0) where key = ${key}`);
+}
