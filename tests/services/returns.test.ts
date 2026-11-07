@@ -1,13 +1,13 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { colomboYear } from "@/lib/dates";
+import { addDays, colomboDate, colomboYear } from "@/lib/dates";
 import type { SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
 import { customers, invoiceItems, parts, payments, settings, stockMovements } from "@/server/db/schema";
 import { InvalidState, ReturnQtyExceeded } from "@/server/errors";
 import { customerBalance, customerStatement, invoiceOutstanding } from "@/server/services/customers";
 import { cancelInvoice, createInvoice } from "@/server/services/invoicing";
-import { createReturn } from "@/server/services/returns";
+import { createReturn, listReturns } from "@/server/services/returns";
 import { resetDb } from "../helpers/db";
 import { makeCustomer, makePart, makeUser, tierIds } from "../helpers/factories";
 
@@ -134,5 +134,25 @@ describe("createReturn", () => {
       expect(statement.rows.map((r) => r.type)).toContain("REFUND");
       expect(statement.closing).toBe("0.00");
     });
+  });
+});
+
+describe("listReturns", () => {
+  beforeEach(async () => {
+    await resetDb();
+    admin = await makeUser("admin");
+    staff = await makeUser("staff");
+  });
+
+  it("filters by return date and says what each return undoes", async () => {
+    const { inv, item } = await sell(3);
+    await createReturn(staff, { invoiceId: inv.id, reason: "Wrong size", lines: [{ invoiceItemId: item.id, qty: 1, restock: true }] });
+    const today = colomboDate();
+
+    const rows = await listReturns({ from: today, to: today });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ invoiceNumber: inv.number, invoiceDate: today, reason: "Wrong size", total: "1000.00" });
+    expect(await listReturns({ from: addDays(today, -10), to: addDays(today, -1) })).toHaveLength(0);
+    expect(await listReturns({ from: today })).toHaveLength(1);
   });
 });
