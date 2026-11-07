@@ -6,9 +6,9 @@ test("admin sees stock health and filters the list", async ({ page }) => {
   await login(page, "admin");
   await page.goto("/stock");
 
-  for (const tile of ["Stock value", "Slow & dead", "Turns per year", "Days of stock"]) {
-    await expect(page.getByRole("term").filter({ hasText: new RegExp(`^${tile}$`) })).toBeVisible();
-  }
+  const term = (name: string) => page.getByRole("term").filter({ hasText: new RegExp(`^${name}$`) });
+  for (const tile of ["Stock value", "Slow & dead"]) await expect(term(tile)).toBeVisible();
+  await expect(term("Turns per year")).toBeHidden();
   await expect(page.getByRole("columnheader", { name: "Last sold" })).toBeVisible();
 
   await page.getByRole("link", { name: /^0–90 days/ }).click();
@@ -20,8 +20,11 @@ test("admin sees stock health and filters the list", async ({ page }) => {
   await page.getByRole("button", { name: "Show" }).click();
   await expect(page).toHaveURL(/age=0-90/); // the band survives a search
 
+  await page.getByText("More figures").click();
+  for (const tile of ["Turns per year", "Days of stock"]) await expect(term(tile)).toBeVisible();
   await page.getByRole("link", { name: /^A · / }).click();
   await expect(page).toHaveURL(/class=A/);
+  await expect(page.getByRole("link", { name: /^A · / })).toBeVisible(); // stays open while a class is chosen
   await page.getByRole("link", { name: "Show all" }).click();
   await expect(page).not.toHaveURL(/age=|class=/);
 });

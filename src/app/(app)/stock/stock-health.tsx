@@ -1,4 +1,6 @@
+import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
+import { MoreFigures } from "@/components/more-figures";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate, formatMoney } from "@/lib/format";
 import { D } from "@/lib/money";
@@ -28,18 +30,23 @@ export function StockHealthSummary({
   hrefFor: (f: { age?: StockAgeBand; cls?: AbcClass }) => string;
 }) {
   const value = D(h.stockValue);
+  const fastLow = h.classes.find((c) => c.key === "A")?.lowOrOut ?? 0;
   return (
     <div className="mb-6 flex flex-col gap-4">
-      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-4">
         <Tile label="Stock value" value={`Rs ${formatMoney(h.stockValue)}`} note={`${plural(h.partsInStock, "part", "parts")} in stock`} />
         <Tile label="Slow & dead" value={`Rs ${formatMoney(h.slowValue)}`} note={`${h.slowPct}% · ${plural(h.slowParts, "part", "parts")}`} />
-        <Tile label="Turns per year" value={h.turnsPerYear === null ? "—" : `${h.turnsPerYear}×`} note="last 90 days" />
-        <Tile
-          label="Days of stock"
-          value={h.daysOfStock === null ? "—" : plural(h.daysOfStock, "day", "days")}
-          note={h.daysOfStock === null ? "no sales in 90 days" : "at the current sales pace"}
-        />
       </dl>
+      {fastLow > 0 && (
+        <Link
+          href={hrefFor({ cls: "A" })}
+          scroll={false}
+          className="flex w-fit items-center gap-2 rounded-lg border border-warning bg-warning/15 px-3 py-2 text-sm font-medium text-warning-foreground hover:bg-warning/25"
+        >
+          <TriangleAlert aria-hidden className="size-4" />
+          {plural(fastLow, "best seller is", "best sellers are")} low or out of stock
+        </Link>
+      )}
 
       {value.greaterThan(0) && (
         <section aria-labelledby="stock-age" className="rounded-lg border bg-card p-4 sm:p-5">
@@ -62,29 +69,6 @@ export function StockHealthSummary({
                 </FilterLink>
               </li>
             ))}
-          </ul>
-        </section>
-      )}
-
-      {h.classes.some((c) => c.parts > 0) && (
-        <section aria-labelledby="sales-classes" className="rounded-lg border bg-card p-4 sm:p-5">
-          <h2 id="sales-classes" className="text-sm text-muted-foreground">
-            Sales classes (last 12 months)
-          </h2>
-          <ul className="mt-2 flex flex-col gap-0.5 text-sm">
-            {h.classes
-              .filter((c) => c.parts > 0)
-              .map((c) => (
-                <li key={c.key}>
-                  <FilterLink href={hrefFor({ cls: c.key })} active={cls === c.key}>
-                    {c.label} · {plural(c.parts, "part", "parts")}
-                    {c.salesPct !== null && ` · ${c.salesPct}% of sales`} · Rs {formatMoney(c.stockValue)} in stock
-                    {c.key === "A" && c.lowOrOut > 0 && (
-                      <span className="font-medium text-warning-foreground"> · {c.lowOrOut} low or out of stock</span>
-                    )}
-                  </FilterLink>
-                </li>
-              ))}
           </ul>
         </section>
       )}
@@ -123,6 +107,38 @@ export function StockHealthSummary({
           </Table>
         </section>
       )}
+      <MoreFigures open={cls !== null}>
+        <dl className="grid grid-cols-2 gap-4">
+          <Tile label="Turns per year" value={h.turnsPerYear === null ? "—" : `${h.turnsPerYear}×`} note="how often the stock sells through, last 90 days" />
+          <Tile
+            label="Days of stock"
+            value={h.daysOfStock === null ? "—" : plural(h.daysOfStock, "day", "days")}
+            note={h.daysOfStock === null ? "no sales in 90 days" : "how long it lasts at the current sales pace"}
+          />
+        </dl>
+        {h.classes.some((c) => c.parts > 0) && (
+          <section aria-labelledby="sales-classes">
+            <h2 id="sales-classes" className="text-sm text-muted-foreground">
+              Sales classes (last 12 months)
+            </h2>
+            <ul className="mt-2 flex flex-col gap-0.5 text-sm">
+              {h.classes
+                .filter((c) => c.parts > 0)
+                .map((c) => (
+                  <li key={c.key}>
+                    <FilterLink href={hrefFor({ cls: c.key })} active={cls === c.key}>
+                      {c.label} · {plural(c.parts, "part", "parts")}
+                      {c.salesPct !== null && ` · ${c.salesPct}% of sales`} · Rs {formatMoney(c.stockValue)} in stock
+                      {c.key === "A" && c.lowOrOut > 0 && (
+                        <span className="font-medium text-warning-foreground"> · {c.lowOrOut} low or out of stock</span>
+                      )}
+                    </FilterLink>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        )}
+      </MoreFigures>
     </div>
   );
 }
