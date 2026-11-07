@@ -40,6 +40,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 </Link>
               </>
             )}
+            {d.todayReturnCount > 0 && (
+              <>
+                {" · "}
+                <Link href={`/returns?from=${today}&to=${today}`} className="text-primary hover:underline">
+                  {d.todayReturnCount} {d.todayReturnCount === 1 ? "return" : "returns"} <Amount value={d.todayReturns} />
+                </Link>
+              </>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

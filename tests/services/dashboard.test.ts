@@ -3,10 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { addDays, colomboDate } from "@/lib/dates";
 import type { SessionUser } from "@/server/auth";
 import { db } from "@/server/db/client";
-import { parts } from "@/server/db/schema";
+import { invoiceItems, parts } from "@/server/db/schema";
 import { Forbidden } from "@/server/errors";
 import { getDashboard, resolveReconciliationIssue } from "@/server/services/dashboard";
 import { cancelInvoice, createInvoice } from "@/server/services/invoicing";
+import { createReturn } from "@/server/services/returns";
 import { resetDb } from "../helpers/db";
 import { makeCustomer, makePart, makeUser } from "../helpers/factories";
 
@@ -33,6 +34,21 @@ describe("dashboard", () => {
     const d = await getDashboard(staff);
     expect(d.todaySales).toBe("1000.00");
     expect(d.todayInvoiceCount).toBe(1);
+  });
+
+  it("counts today's returns", async () => {
+    const customer = await makeCustomer({ creditLimit: "100000.00" });
+    const part = await makePart({ qty: 20 });
+    const inv = await createInvoice(admin, {
+      customerId: customer.id,
+      paymentType: "credit",
+      invoiceDate: addDays(today, -5),
+      lines: [{ partId: part.id, qty: 3 }],
+    });
+    const [item] = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, inv.id));
+    expect(await getDashboard(staff)).toMatchObject({ todayReturnCount: 0, todayReturns: "0.00" });
+    await createReturn(staff, { invoiceId: inv.id, reason: "Wrong size", lines: [{ invoiceItemId: item.id, qty: 2, restock: true }] });
+    expect(await getDashboard(staff)).toMatchObject({ todaySales: "0.00", todayReturnCount: 1, todayReturns: "2000.00" });
   });
 
   it("splits what is owed from what is overdue", async () => {

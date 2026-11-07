@@ -17,7 +17,8 @@ export type SalesTotals = {
   creditSales: string;
 };
 
-export type TrendPoint = { bucketStart: string; netSales: string; grossProfit: string };
+/** `returns` is the net amount of returns dated in the bucket (positive), already taken off `netSales`. */
+export type TrendPoint = { bucketStart: string; netSales: string; grossProfit: string; returns: string };
 
 /**
  * Every sold and returned line in the range, one row each (spec §3): `net` carries the line's share
@@ -28,13 +29,15 @@ function saleLines(range: DateRange) {
   const share = (amount: string) =>
     sql.raw(`case when i.subtotal = 0 then 0 else ${amount} * (i.subtotal - i.discount_total) / i.subtotal end`);
   return sql`
-    select i.invoice_date as d, ii.part_id, ii.qty, ${share("ii.line_total")} as net, ii.unit_cost * ii.qty as cost
+    select i.invoice_date as d, ii.part_id, ii.qty, ${share("ii.line_total")} as net, ii.unit_cost * ii.qty as cost,
+           false as is_return
     from invoice_items ii
     join invoices i on i.id = ii.invoice_id
     where i.status = 'issued' and i.invoice_date between ${range.from}::date and ${range.to}::date
     union all
     select r.return_date, ri.part_id, -ri.qty, -${share("ri.line_total")},
-           -(case when ri.restock then ii.unit_cost * ri.qty else 0 end)
+           -(case when ri.restock then ii.unit_cost * ri.qty else 0 end),
+           true
     from sales_return_items ri
     join sales_returns r on r.id = ri.return_id
     join invoices i on i.id = r.invoice_id
@@ -82,7 +85,7 @@ export async function getSalesTotals(range: DateRange): Promise<SalesTotals> {
 
 /** Net sales and gross profit per day, week (from Monday) or month; empty buckets are 0. */
 export async function getSalesTrend(range: DateRange, bucket: Bucket): Promise<TrendPoint[]> {
-  const rows = await db.execute<{ bucket_start: string; net_sales: string; gross_profit: string }>(sql`
+  const rows = await db.execute<{ bucket_start: string; net_sales: string; gross_profit: string; returns: string }>(sql`
     with lines as (${saleLines(range)}),
     buckets as (
       select generate_series(
@@ -93,18 +96,20 @@ export async function getSalesTrend(range: DateRange, bucket: Bucket): Promise<T
     ),
     sums as (
       select date_trunc(${bucket}, d::timestamp)::date as b,
-             sum(net)::numeric(12, 2) as net_sales, sum(cost)::numeric(12, 2) as cost
+             sum(net)::numeric(12, 2) as net_sales, sum(cost)::numeric(12, 2) as cost,
+             (-coalesce(sum(net) filter (where is_return), 0))::numeric(12, 2) as returns
       from lines
       group by 1
     )
     select greatest(buckets.b, ${range.from}::date)::text as bucket_start,
            coalesce(sums.net_sales, 0)::numeric(12, 2)::text as net_sales,
-           coalesce(sums.net_sales - sums.cost, 0)::numeric(12, 2)::text as gross_profit
+           coalesce(sums.net_sales - sums.cost, 0)::numeric(12, 2)::text as gross_profit,
+           coalesce(sums.returns, 0)::numeric(12, 2)::text as returns
     from buckets
     left join sums on sums.b = buckets.b
     order by buckets.b
   `);
-  return rows.map((r) => ({ bucketStart: r.bucket_start, netSales: r.net_sales, grossProfit: r.gross_profit }));
+  return rows.map((r) => ({ bucketStart: r.bucket_start, netSales: r.net_sales, grossProfit: r.gross_profit, returns: r.returns }));
 }
 
 export type TopDimension = "parts" | "categories" | "brands" | "models";
