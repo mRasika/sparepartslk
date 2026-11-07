@@ -65,8 +65,7 @@ Until both variables are set, no email is ever sent and the sign-in page says "F
 ## For developers
 
 - **Code:** `src/server/services/password-reset.ts` (steps 1 and 2), `src/lib/reset-code.ts` (code rules), `src/server/rate-limit.ts` (shared counters), `src/server/email.ts` (Resend sender), and `src/app/(auth)/forgot-password/`. Admin side: `setUserPassword` and `setCanGetEmails` in `src/server/services/users.ts`.
-- **Tables** (migration `0011_password_reset`): `password_reset_codes` (one row per email), `rate_limits`, and `profiles.can_get_emails` and `profiles.signed_out_at`. RLS is on with no policies, like every other table.
-- **Signing out every device:** a password change sets `profiles.signed_out_at`. `getSessionUser` turns away any session whose sign-in time is earlier. The sign-in time comes from the token's `amr` timestamp, which Supabase keeps when it refreshes a token. Supabase's refresh tokens for the old sessions still exist, but every session they make is refused.
-- **Supabase's own reset** (`resetPasswordForEmail`) isn't used. It can't check the tick, its limits are per project, and it doesn't sign other devices out.
+- **Tables** (migration `0011_password_reset`): `password_reset_codes` (one row per email), `rate_limits`, and `profiles.can_get_emails`. RLS is on with no policies, like every other table.
+- **Signing out every device:** a password change writes the new hash and deletes every `session` row of that login in one transaction (`setPassword` in `src/server/auth-admin.ts`). `getSessionUser` reads the session row on every request, so the other devices are sent to the sign-in page on their next click.
 - **Local and test email:** set `EMAIL_OUTBOX_DIR=some-folder` and emails are written there as JSON files instead of sent. This setting is ignored on Vercel Production. The e2e server uses `.e2e-outbox`.
-- **The code's secret** is derived from `SUPABASE_SERVICE_ROLE_KEY`. Rotating that key only cancels codes that are live at that moment.
+- **The code's secret** is derived from `BETTER_AUTH_SECRET`. Rotating it cancels codes that are live at that moment, and signs everyone out.
