@@ -1,9 +1,10 @@
 import { AlertTriangle, FilePlus, PackageOpen } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
+import { Amount } from "@/components/amount";
 import { buttonVariants } from "@/components/ui/button";
 import { attentionItems } from "@/lib/attention";
-import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { colomboDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
 import { getDashboard } from "@/server/services/dashboard";
@@ -29,7 +30,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             Today <span className="text-base font-normal text-muted-foreground">· {formatDate(today)}</span>
           </h1>
           <p className="mt-1 text-muted-foreground">
-            <span className="font-semibold text-foreground tabular-nums">Rs {formatMoney(d.todaySales)}</span> sold
+            <Amount value={d.todaySales} className="font-semibold text-foreground tabular-nums" /> sold
             today · {d.todayInvoiceCount} {d.todayInvoiceCount === 1 ? "invoice" : "invoices"}
             {d.todayInvoiceCount > 0 && (
               <>

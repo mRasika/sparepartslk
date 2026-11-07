@@ -14,7 +14,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/format";
+import { StockLevel } from "@/components/stock-level";
+import { colomboDate } from "@/lib/dates";
+import { formatDate, formatSince, moneyColumn } from "@/lib/format";
 import { D, fmt, sum } from "@/lib/money";
 import { ABC_CLASSES, isAbcClass, isStockAgeBand, STOCK_AGE_BANDS, type AbcClass, type StockAgeBand } from "@/lib/stock-health";
 import { requireUser, type SessionUser } from "@/server/auth";
@@ -100,6 +102,9 @@ async function StockView({
       ? `class ${ABC_CLASSES.find((c) => c.key === cls)?.label}`
       : null;
   const totalValue = isAdmin ? fmt(sum(rows.map((r) => D(r.stockValue ?? "0")))) : null;
+  const avgCost = moneyColumn(rows.map((r) => r.avgCost));
+  const valueColumn = moneyColumn([...rows.map((r) => r.stockValue), totalValue]);
+  const today = colomboDate();
 
   return (
     <>
@@ -137,16 +142,16 @@ async function StockView({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>SKU</TableHead>
+              <TableHead className="hidden sm:table-cell">SKU</TableHead>
               <TableHead>Name</TableHead>
               <TableHead className="hidden lg:table-cell">Category</TableHead>
               <TableHead className="hidden md:table-cell">Bin</TableHead>
               <TableHead className="text-right">On hand</TableHead>
               <TableHead className="hidden text-right sm:table-cell">Reorder at</TableHead>
-              {isAdmin && <TableHead className="hidden text-right md:table-cell">Avg cost</TableHead>}
+              {isAdmin && <TableHead className="hidden text-right md:table-cell">Avg cost (Rs)</TableHead>}
               {isAdmin && <TableHead className="text-right">Value (Rs)</TableHead>}
               {isAdmin && <TableHead className="hidden md:table-cell">Last sold</TableHead>}
-              {isAdmin && <TableHead>Class</TableHead>}
+              {isAdmin && <TableHead className="hidden sm:table-cell">Class</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -158,40 +163,60 @@ async function StockView({
               </TableRow>
             )}
             {rows.map((r) => {
-              const isLow = r.isActive && r.reorderLevel > 0 && r.qtyOnHand <= r.reorderLevel;
+              const lastSold = partHealth(r.id).lastSoldOn;
               return (
                 <TableRow key={r.id} className={r.isActive ? "" : "text-muted-foreground"}>
-                  <TableCell className="font-medium">
+                  <TableCell className="hidden font-medium sm:table-cell">
                     <Link href={`/parts/${r.id}`} className="hover:underline">
                       {r.sku}
                     </Link>
                   </TableCell>
-                  <TableCell>{r.name}</TableCell>
+                  <TableCell className="whitespace-normal">
+                    <Link href={`/parts/${r.id}`} className="block text-xs font-medium text-muted-foreground hover:underline sm:hidden">
+                      {r.sku}
+                    </Link>
+                    {r.name}
+                  </TableCell>
                   <TableCell className="hidden lg:table-cell">{r.categoryName}</TableCell>
                   <TableCell className="hidden md:table-cell">{r.binLocation}</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    <span className={isLow ? "rounded bg-warning/25 px-1.5 py-0.5 font-medium" : ""}>{r.qtyOnHand}</span>
+                    <StockLevel qty={r.qtyOnHand} reorderLevel={r.reorderLevel} active={r.isActive} />
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">{r.reorderLevel || "–"}</TableCell>
-                  {isAdmin && <TableCell className="hidden text-right tabular-nums md:table-cell">{formatMoney(r.avgCost)}</TableCell>}
-                  {isAdmin && <TableCell className="text-right tabular-nums">{formatMoney(r.stockValue)}</TableCell>}
+                  {isAdmin && <TableCell className="hidden text-right tabular-nums md:table-cell">{avgCost(r.avgCost)}</TableCell>}
+                  {isAdmin && <TableCell className="text-right tabular-nums">{valueColumn(r.stockValue)}</TableCell>}
                   {isAdmin && (
                     <TableCell className="hidden whitespace-nowrap md:table-cell">
-                      {partHealth(r.id).lastSoldOn ? formatDate(partHealth(r.id).lastSoldOn!) : "Never"}
+                      {lastSold ? (
+                        <time dateTime={lastSold} title={formatDate(lastSold)}>
+                          {formatSince(lastSold, today)}
+                        </time>
+                      ) : (
+                        "Never"
+                      )}
                     </TableCell>
                   )}
-                  {isAdmin && <TableCell>{classLabel(partHealth(r.id).cls)}</TableCell>}
+                  {isAdmin && <TableCell className="hidden sm:table-cell">{classLabel(partHealth(r.id).cls)}</TableCell>}
                 </TableRow>
               );
             })}
           </TableBody>
           {isAdmin && rows.length > 0 && (
             <TableFooter>
-              <TableRow>
+              {/* Columns hide below lg, so the total gets its own one-cell row there. */}
+              <TableRow className="lg:hidden">
+                <TableCell colSpan={10}>
+                  <span className="flex flex-wrap justify-between gap-2 font-medium">
+                    Stock value of the parts shown
+                    <span className="font-semibold tabular-nums">{valueColumn(totalValue)}</span>
+                  </span>
+                </TableCell>
+              </TableRow>
+              <TableRow className="hidden lg:table-row">
                 <TableCell colSpan={7} className="text-right font-medium">
                   Stock value of the parts shown
                 </TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{formatMoney(totalValue)}</TableCell>
+                <TableCell className="text-right font-semibold tabular-nums">{valueColumn(totalValue)}</TableCell>
                 <TableCell colSpan={2} />
               </TableRow>
             </TableFooter>

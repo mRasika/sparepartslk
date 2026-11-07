@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { formatDateTime, formatMoney } from "@/lib/format";
+import { formatDateTime, moneyColumn } from "@/lib/format";
 import { discardInvoiceDraftAction } from "@/server/actions/invoices";
 import type { InvoiceDraftRow } from "@/server/services/invoice-drafts";
 
@@ -16,6 +16,7 @@ export function DraftList({ drafts }: { drafts: InvoiceDraftRow[] }) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const shown = drafts.filter((d) => !hidden.has(d.id));
+  const totalColumn = moneyColumn(shown.map((d) => d.total));
   if (shown.length === 0) return null;
 
   function discard(id: string) {
@@ -49,7 +50,7 @@ export function DraftList({ drafts }: { drafts: InvoiceDraftRow[] }) {
             <span className="text-muted-foreground">
               {d.lineCount} {d.lineCount === 1 ? "part" : "parts"}
             </span>
-            <span className="w-28 text-right tabular-nums">{d.total ? `Rs ${formatMoney(d.total)}` : "–"}</span>
+            <span className="w-28 text-right tabular-nums">{d.total ? `Rs ${totalColumn(d.total)}` : "–"}</span>
             <span className="w-52 text-xs text-muted-foreground">
               {d.updatedByName}, {formatDateTime(d.updatedAt)}
             </span>

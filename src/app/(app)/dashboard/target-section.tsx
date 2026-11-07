@@ -1,5 +1,6 @@
 import { CircleCheck, TrendingUp, TriangleAlert } from "lucide-react";
 import Link from "next/link";
+import { Amount } from "@/components/amount";
 import { Badge } from "@/components/ui/badge";
 import { colomboDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/format";
@@ -10,6 +11,7 @@ import type { SessionUser } from "@/server/auth";
 import { type DailyTargetReport, getDailyTargetReport } from "@/server/services/sales-targets";
 import { ReportPicker } from "./report-picker";
 
+/** Exact amounts, for tooltips; on-screen amounts use <Amount> ("Rs 258k"). */
 const rs = (amount: string) => `Rs ${formatMoney(amount)}`;
 
 /** Admin-only: today and the month against the daily sales target (spec §3). */
@@ -74,7 +76,7 @@ function TodayRow({ day }: { day: DailyTargetReport["day"] }) {
     return (
       <Row label="Today">
         <p className="text-sm">
-          Closed today · <span className="tabular-nums">{rs(day.netSales)}</span> sold
+          Closed today · <Amount value={day.netSales} className="tabular-nums" /> sold
         </p>
       </Row>
     );
@@ -84,15 +86,19 @@ function TodayRow({ day }: { day: DailyTargetReport["day"] }) {
   return (
     <Row label="Today">
       <p className="text-sm tabular-nums">
-        <span className="font-semibold">{rs(day.netSales)}</span> of {rs(day.target)}
+        <Amount value={day.netSales} className="font-semibold" /> of <Amount value={day.target} />
       </p>
       <Bar pct={pct} label="Today's sales against target" tone={day.status === "hit" ? "success" : "primary"} />
       <p className="text-sm tabular-nums">
         {pct}% ·{" "}
         {day.status === "hit" ? (
-          <span className="font-medium text-success">Hit · {rs(fmt(gap))} over</span>
+          <span className="font-medium text-success">
+            Hit · <Amount value={fmt(gap)} /> over
+          </span>
         ) : (
-          <span>In progress · {rs(fmt(gap.negated()))} to go</span>
+          <span>
+            In progress · <Amount value={fmt(gap.negated())} /> to go
+          </span>
         )}
       </p>
     </Row>
@@ -107,7 +113,7 @@ function MonthRow({ month, today }: { month: DailyTargetReport["month"]; today: 
     <Row label="Month">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm tabular-nums">
-          <span className="font-semibold">{rs(month.mtd)}</span> of {rs(month.monthTarget)} · {trading} trading days
+          <Amount value={month.mtd} className="font-semibold" /> of <Amount value={month.monthTarget} /> · {trading} trading days
         </p>
         {gap !== null && <PaceChip gap={gap} />}
       </div>
@@ -123,12 +129,12 @@ function MonthRow({ month, today }: { month: DailyTargetReport["month"]; today: 
           <span className="font-medium text-success">Month target reached</span>
         ) : month.outcome === "missed" ? (
           <span className="text-destructive">
-            Missed the month by {rs(fmt(D(month.monthTarget).minus(month.mtd)))}
+            Missed the month by <Amount value={fmt(D(month.monthTarget).minus(month.mtd))} />
           </span>
         ) : month.needPerDay ? (
           <span>
-            Need {rs(month.needPerDay)} a day for the {month.tradingDaysLeft} trading{" "}
-            {month.tradingDaysLeft === 1 ? "day" : "days"} left
+            Sell about <Amount value={month.needPerDay} className="font-medium" /> a day to reach the target ·{" "}
+            {month.tradingDaysLeft} trading {month.tradingDaysLeft === 1 ? "day" : "days"} left
           </span>
         ) : (
           <span>Last trading day of the month</span>
@@ -151,11 +157,11 @@ function PaceChip({ gap }: { gap: string }) {
   }
   return amount.greaterThan(0) ? (
     <Badge title={title} className="bg-success/15 text-success">
-      <TrendingUp aria-hidden /> Ahead by {rs(gap)}
+      <TrendingUp aria-hidden /> Ahead by <Amount value={gap} />
     </Badge>
   ) : (
     <Badge title={title} className="bg-warning/20 text-warning-foreground">
-      <TriangleAlert aria-hidden /> Behind by {rs(fmt(amount.negated()))}
+      <TriangleAlert aria-hidden /> Behind by <Amount value={fmt(amount.negated())} />
     </Badge>
   );
 }

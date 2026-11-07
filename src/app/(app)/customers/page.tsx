@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatMoney } from "@/lib/format";
+import { moneyColumn } from "@/lib/format";
 import { requireUser } from "@/server/auth";
 import { listCustomers } from "@/server/services/customers";
 
@@ -21,6 +21,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const { q = "" } = await searchParams;
   const rows = await listCustomers({ q });
 
+  const limitColumn = moneyColumn(rows.map((c) => c.creditLimit));
   return (
     <div>
       <PageHeader
@@ -73,7 +74,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                 <TableCell className="hidden md:table-cell">{c.phone}</TableCell>
                 <TableCell>{c.tierName}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {c.creditLimit === "0.00" ? <span className="text-muted-foreground">Cash only</span> : formatMoney(c.creditLimit)}
+                  {c.creditLimit === "0.00" ? <span className="text-muted-foreground">Cash only</span> : limitColumn(c.creditLimit)}
                 </TableCell>
                 <TableCell className="hidden text-right tabular-nums sm:table-cell">
                   {c.creditLimit === "0.00" ? "–" : c.creditDays}

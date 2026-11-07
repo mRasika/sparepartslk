@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, moneyColumn } from "@/lib/format";
 import { QUOTATION_STATUS_LABEL, type QuotationStatus } from "@/lib/quotations";
 import { requireUser } from "@/server/auth";
 import { listQuotations } from "@/server/services/quotations";
@@ -29,6 +29,7 @@ export default async function QuotationsPage({ searchParams }: { searchParams: S
   const rows = await listQuotations({ q, status: statusFilter });
   const filtered = Boolean(q || statusFilter);
 
+  const totalColumn = moneyColumn(rows.map((r) => r.total));
   return (
     <div>
       <PageHeader
@@ -102,7 +103,7 @@ export default async function QuotationsPage({ searchParams }: { searchParams: S
                   )}
                 </TableCell>
                 <TableCell className="hidden whitespace-nowrap sm:table-cell">{formatDate(r.validUntil)}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatMoney(r.total)}</TableCell>
+                <TableCell className="text-right tabular-nums">{totalColumn(r.total)}</TableCell>
                 <TableCell>
                   <QuotationStatusBadge status={r.status} invoiceNumber={r.invoiceNumber} />
                 </TableCell>

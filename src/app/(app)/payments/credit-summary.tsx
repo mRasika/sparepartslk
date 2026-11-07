@@ -1,12 +1,13 @@
 import { CircleCheck, OctagonAlert, TriangleAlert } from "lucide-react";
 import Link from "next/link";
+import { Amount } from "@/components/amount";
 import { MoreFigures } from "@/components/more-figures";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { outstandingHref, type AgingGroupKey, type CustomerCreditRow, type CreditSummary as Summary } from "@/lib/aging";
 import { colomboDate } from "@/lib/dates";
-import { formatDate, formatMoney, formatSince } from "@/lib/format";
+import { formatDate, formatDays, formatMoney, formatSince, moneyColumn } from "@/lib/format";
 import { D, type Decimal } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
@@ -37,29 +38,22 @@ export function CreditSummary({
   const today = colomboDate();
   // Bars in Who owes are drawn against the largest amount owed, so their lengths compare.
   const largest = s.customers.reduce((max, c) => (D(c.owed).greaterThan(max) ? D(c.owed) : max), D(0));
+  const owedColumn = moneyColumn(s.customers.map((c) => c.owed));
   return (
     <div className="mb-6 flex flex-col gap-4">
-      <dl className="grid grid-cols-2 gap-4">
-        <Tile label="Owed" value={`Rs ${formatMoney(s.owed)}`} note={plural(s.customersOwing, "customer", "customers")} />
-        <Tile
-          label="Overdue"
-          value={`Rs ${formatMoney(s.overdue)}`}
-          note={`${s.overduePct}% · ${plural(s.customersOverdue, "customer", "customers")}`}
-          tone={D(s.overdue).greaterThan(0) ? "text-destructive" : undefined}
-        />
-      </dl>
+      <OwedSentence summary={s} />
       <MoreFigures>
         <dl className="grid grid-cols-2 gap-4">
-          <Tile label="Due in next 7 days" value={`Rs ${formatMoney(s.dueSoon)}`} note={plural(s.dueSoonInvoices, "invoice", "invoices")} />
+          <Tile label="Due in next 7 days" value={<Amount value={s.dueSoon} />} note={plural(s.dueSoonInvoices, "invoice", "invoices")} />
           <Tile
-            label="Days to collect"
-            value={s.dso === null ? "—" : plural(s.dso, "day", "days")}
-            note={s.dso === null ? "no credit sales in 90 days" : "how long customers take to pay, last 90 days"}
+            label="Customers pay after"
+            value={s.dso === null ? "—" : formatDays(s.dso)}
+            note={s.dso === null ? "no credit sales in 90 days" : "on average, last 90 days"}
           />
         </dl>
         {D(s.unappliedCredit).greaterThan(0) && (
           <p className="text-sm text-muted-foreground">
-            Rs {formatMoney(s.unappliedCredit)} paid in advance, not yet matched to invoices
+            <Amount value={s.unappliedCredit} /> paid in advance, not yet matched to invoices
           </p>
         )}
       </MoreFigures>
@@ -89,7 +83,9 @@ export function CreditSummary({
                   )}
                 >
                   <span className={cn("inline-block size-2.5 rounded-sm", GROUP_COLOR[g.key])} aria-hidden />
-                  {g.label} · Rs {formatMoney(g.amount)}
+                  <span>
+                    {g.label} · <Amount value={g.amount} />
+                  </span>
                 </Link>
               </li>
             ))}
@@ -135,7 +131,7 @@ export function CreditSummary({
                     </Link>
                   </TableCell>
                   <TableCell className="text-right">
-                    <OwedAmount row={c} largest={largest} />
+                    <OwedAmount row={c} largest={largest} format={owedColumn} />
                   </TableCell>
                   <TableCell>
                     <Status row={c} />
@@ -165,24 +161,49 @@ export function CreditSummary({
   );
 }
 
-function Tile({ label, value, note, tone }: { label: string; value: string; note: string; tone?: string }) {
+/** What customers owe and how much of it is late, in one sentence (replaces the Owed / Overdue boxes). */
+function OwedSentence({ summary: s }: { summary: Summary }) {
+  const late = D(s.overdue).greaterThan(0);
+  return (
+    <section aria-label="What customers owe" className="rounded-lg border bg-card p-4 sm:p-5">
+      {D(s.owed).greaterThan(0) ? (
+        <p className="text-lg leading-snug">
+          Customers owe <Amount value={s.owed} className="font-semibold tabular-nums" />, from{" "}
+          {plural(s.customersOwing, "customer", "customers")}.{" "}
+          {late ? (
+            <span className="text-destructive">
+              <Amount value={s.overdue} className="font-semibold tabular-nums" /> of it is late, from{" "}
+              {plural(s.customersOverdue, "customer", "customers")}.
+            </span>
+          ) : (
+            <span className="text-muted-foreground">None of it is late.</span>
+          )}
+        </p>
+      ) : (
+        <p className="text-lg leading-snug">Nobody owes you anything right now.</p>
+      )}
+    </section>
+  );
+}
+
+function Tile({ label, value, note }: { label: string; value: React.ReactNode; note: string }) {
   return (
     <div className="rounded-lg border bg-card p-4 sm:p-5">
       <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className={cn("mt-2 text-xl font-semibold tabular-nums tracking-tight sm:text-2xl", tone)}>{value}</dd>
+      <dd className="mt-2 text-xl font-semibold tabular-nums tracking-tight sm:text-2xl">{value}</dd>
       <dd className="mt-1 text-sm text-muted-foreground">{note}</dd>
     </div>
   );
 }
 
 /** The amount owed, with a bar sized against the largest debt; its red part is the overdue amount. */
-function OwedAmount({ row: c, largest }: { row: CustomerCreditRow; largest: Decimal }) {
+function OwedAmount({ row: c, largest, format }: { row: CustomerCreditRow; largest: Decimal; format: (v: string) => string }) {
   const overdue = D(c.overdue);
   const share = (amount: Decimal) => (largest.greaterThan(0) ? amount.div(largest).times(100).toFixed(2) : "0");
   const limit = c.limitUsedPct === null ? "Cash only" : `${c.limitUsedPct}% of credit limit`;
   return (
     <span className="inline-flex flex-col items-end gap-1">
-      <span className="tabular-nums">{formatMoney(c.owed)}</span>
+      <span className="tabular-nums">{format(c.owed)}</span>
       {overdue.greaterThan(0) && <span className="sr-only">, of which Rs {formatMoney(c.overdue)} overdue</span>}
       <span
         aria-hidden

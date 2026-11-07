@@ -1,5 +1,5 @@
 import { colomboDate } from "@/lib/dates";
-import { formatMoney } from "@/lib/format";
+import { Amount } from "@/components/amount";
 import { D } from "@/lib/money";
 import { formatRange, PERIOD_PRESETS, resolvePeriod } from "@/lib/periods";
 import { avgSale, marginPct, pctChange, pointsChange } from "@/lib/sales-metrics";
@@ -131,12 +131,12 @@ function KpiTiles({ current, previous, compareLabel }: { current: SalesTotals; p
     <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <Stat
         label="Net sales"
-        value={`Rs ${formatMoney(current.netSales)}`}
+        value={<Amount value={current.netSales} />}
         change={<Change pct={pctChange(current.netSales, previous.netSales)} suffix={` vs ${compareLabel}`} />}
       />
       <Stat
         label="Gross profit"
-        value={`Rs ${formatMoney(current.grossProfit)}`}
+        value={<Amount value={current.grossProfit} />}
         change={<Change pct={pctChange(current.grossProfit, previous.grossProfit)} />}
       />
       <Stat
@@ -146,7 +146,7 @@ function KpiTiles({ current, previous, compareLabel }: { current: SalesTotals; p
       />
       <Stat
         label="Avg sale"
-        value={`Rs ${formatMoney(avgSale(current.invoiceSales, current.invoiceCount))}`}
+        value={<Amount value={avgSale(current.invoiceSales, current.invoiceCount)} />}
         change={
           <span className="text-muted-foreground">
             {current.invoiceCount} {current.invoiceCount === 1 ? "invoice" : "invoices"}
@@ -157,7 +157,7 @@ function KpiTiles({ current, previous, compareLabel }: { current: SalesTotals; p
   );
 }
 
-function Stat({ label, value, change }: { label: string; value: string; change: React.ReactNode }) {
+function Stat({ label, value, change }: { label: string; value: React.ReactNode; change: React.ReactNode }) {
   return (
     <div className="rounded-lg border bg-card p-4 sm:p-5">
       <dt className="text-sm text-muted-foreground">{label}</dt>
@@ -205,11 +205,11 @@ function CashCredit({ totals }: { totals: SalesTotals }) {
       <p className="mt-2 flex flex-wrap justify-between gap-x-4 text-sm tabular-nums">
         <span>
           <span className="mr-1.5 inline-block size-2 rounded-full bg-chart-3" aria-hidden />
-          Cash {cashPct}% · Rs {formatMoney(totals.cashSales)}
+          Cash {cashPct}% · <Amount value={totals.cashSales} />
         </span>
         <span>
           <span className="mr-1.5 inline-block size-2 rounded-full bg-chart-4" aria-hidden />
-          Credit {100 - cashPct}% · Rs {formatMoney(totals.creditSales)}
+          Credit {100 - cashPct}% · <Amount value={totals.creditSales} />
         </span>
       </p>
     </div>

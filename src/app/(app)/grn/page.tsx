@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, moneyColumn } from "@/lib/format";
 import { requireUser } from "@/server/auth";
 import { listGrns, listSuppliers } from "@/server/services/grn";
 
@@ -26,6 +26,7 @@ export default async function GrnListPage({ searchParams }: { searchParams: Sear
     listSuppliers(),
   ]);
 
+  const totalColumn = moneyColumn(rows.map((g) => g.total));
   return (
     <div>
       <PageHeader
@@ -82,7 +83,7 @@ export default async function GrnListPage({ searchParams }: { searchParams: Sear
                 <TableCell>{g.supplierName}</TableCell>
                 <TableCell className="hidden md:table-cell">{g.supplierInvoiceNo}</TableCell>
                 <TableCell className="text-right tabular-nums">{g.itemCount}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatMoney(g.total)}</TableCell>
+                <TableCell className="text-right tabular-nums">{totalColumn(g.total)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
