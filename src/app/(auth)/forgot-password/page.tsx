@@ -5,14 +5,17 @@ import { cachedBusinessName } from "@/server/cached";
 import { emailIsSetUp } from "@/server/email";
 import { ForgotPasswordForm } from "./forgot-password-form";
 
-export async function generateMetadata(): Promise<Metadata> {
-  return { title: `Forgot password · ${await cachedBusinessName()}`, robots: { index: false } };
-}
+export const metadata: Metadata = { robots: { index: false } };
 
-export default function ForgotPasswordPage() {
+// Reads this company's name from its database, so it is never pre-rendered at build.
+export const dynamic = "force-dynamic";
+
+export default async function ForgotPasswordPage() {
   const canEmail = emailIsSetUp();
+  const name = await cachedBusinessName();
   return (
     <main className="flex min-h-svh items-center justify-center px-4 py-12">
+      <title>{`Forgot password · ${name}`}</title>
       <div className="w-full max-w-sm">
         <div className="mb-8 border-l-4 border-warning pl-4">
           <h1 className="text-2xl font-semibold tracking-tight text-primary">Forgot password</h1>

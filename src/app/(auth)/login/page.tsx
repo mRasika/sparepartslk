@@ -1,5 +1,4 @@
 import { CircleCheck } from "lucide-react";
-import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { companyExists } from "@/server/services/setup";
@@ -7,9 +6,8 @@ import { cachedBusinessName } from "@/server/cached";
 import { emailIsSetUp } from "@/server/email";
 import { LoginForm } from "./login-form";
 
-export async function generateMetadata(): Promise<Metadata> {
-  return { title: `Sign in · ${await cachedBusinessName()}` };
-}
+// Reads this company's database (name, whether it is set up), so it is never pre-rendered at build.
+export const dynamic = "force-dynamic";
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ reset?: string }> }) {
   // A new company's empty database: the first visitor is sent on to the one-time setup.
@@ -18,6 +16,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const name = await cachedBusinessName();
   return (
     <main className="flex min-h-svh items-center justify-center px-4 py-12">
+      <title>{`Sign in · ${name}`}</title>
       <div className="w-full max-w-sm">
         <div className="mb-8 border-l-4 border-warning pl-4">
           <h1 className="text-2xl font-semibold tracking-tight text-primary">{name}</h1>

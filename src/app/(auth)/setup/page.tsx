@@ -6,9 +6,7 @@ import { SetupForm } from "./setup-form";
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata(): Promise<Metadata> {
-  return { title: `Set up · ${await cachedBusinessName()}`, robots: { index: false } };
-}
+export const metadata: Metadata = { robots: { index: false } };
 
 /** One-time setup for a new company's empty database. Closed for good once any login exists. */
 export default async function SetupPage() {
@@ -18,6 +16,7 @@ export default async function SetupPage() {
 
   return (
     <main className="flex min-h-svh items-center justify-center px-4 py-12">
+      <title>{`Set up · ${name}`}</title>
       <div className="w-full max-w-sm">
         <div className="mb-8 border-l-4 border-warning pl-4">
           <h1 className="text-2xl font-semibold tracking-tight text-primary">Set up {name}</h1>

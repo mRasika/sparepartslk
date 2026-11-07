@@ -9,6 +9,7 @@ test("a new company is set up once through the browser", async ({ page, context 
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/setup$/);
     await expect(page.getByRole("heading", { name: "Set up Sparepartslk" })).toBeVisible();
+    await expect(page).toHaveTitle("Set up · Sparepartslk");
   });
 
   const fill = async (key: string) => {
@@ -30,6 +31,7 @@ test("a new company is set up once through the browser", async ({ page, context 
     await fill(E2E_SETUP_KEY);
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 60_000 });
     await expect(page.getByRole("link", { name: "Silva Motors" })).toBeVisible();
+    await expect(page).toHaveTitle("Silva Motors");
   });
 
   await test.step("setup is closed afterwards", async () => {
@@ -43,5 +45,6 @@ test("a new company is set up once through the browser", async ({ page, context 
     await page.goto("/setup");
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByRole("heading", { name: "Silva Motors" })).toBeVisible();
+    await expect(page).toHaveTitle("Sign in · Silva Motors");
   });
 });
