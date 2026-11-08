@@ -3,15 +3,19 @@ import type { InvoicePrintData } from "@/server/services/print";
 
 const THERMAL_CSS = `
 @page { size: 80mm auto; margin: 3mm; }
-.inv-thermal { width: 72mm; margin: 0 auto; font-family: ui-monospace, "Courier New", monospace; font-size: 11px;
-  line-height: 1.35; color: #000; background: #fff; }
+.inv-thermal { width: 72mm; margin: 0 auto; font-family: Arial, Helvetica, sans-serif; font-size: 13px;
+  font-weight: 600; line-height: 1.35; color: #000; background: #fff;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .inv-thermal .c { text-align: center; }
 .inv-thermal .row { display: flex; justify-content: space-between; gap: 6px; }
-.inv-thermal .rule { border-top: 1px dashed #000; margin: 5px 0; }
-.inv-thermal .big { font-size: 14px; font-weight: 700; }
+.inv-thermal .rule { border-top: 2px dashed #000; margin: 6px 0; }
+.inv-thermal .big { font-size: 17px; font-weight: 700; }
 `;
 
-/** 80mm receipt: the A4 content, condensed. TINs show when VAT is on. */
+/**
+ * 80mm receipt: the A4 content, condensed. TINs show when VAT is on.
+ * Sans-serif, 13px and semi-bold: thin monospace strokes print faint on thermal paper.
+ */
 export function InvoiceThermal({ data }: { data: InvoicePrintData }) {
   const vatOn = Number(data.vatRate) > 0;
   return (
