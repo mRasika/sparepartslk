@@ -1,13 +1,14 @@
+import { Suspense } from "react";
 import { colomboDate } from "@/lib/dates";
 import { Amount } from "@/components/amount";
 import { D } from "@/lib/money";
-import { formatRange, PERIOD_PRESETS, resolvePeriod } from "@/lib/periods";
+import { formatRange, type Period, PERIOD_PRESETS, resolvePeriod } from "@/lib/periods";
 import { avgSale, marginPct, pctChange, pointsChange } from "@/lib/sales-metrics";
 import { cn } from "@/lib/utils";
 import type { SessionUser } from "@/server/auth";
 import {
-  getSalesAnalytics,
-  type SalesAnalytics,
+  getSalesSummary,
+  getTopSellerTable,
   type SalesTotals,
   type TopDimension,
   type TopSort,
@@ -36,38 +37,34 @@ function dashboardHref(params: SalesParams): string {
   return s ? `/dashboard?${s}` : "/dashboard";
 }
 
-/** Admin-only sales & profit for the chosen period (spec §2). */
-export async function SalesSection({ user, params }: { user: SessionUser; params: SalesParams }) {
+/**
+ * Admin-only sales & profit for the chosen period (spec §2). The heading and period button need no
+ * data, so they stay on screen; the figures and the top-sellers table each load in their own
+ * boundary. A boundary's key holds only what it depends on, so a top-sellers tab or sort reloads
+ * just the table, and a new period reloads both.
+ */
+export function SalesSection({ user, params }: { user: SessionUser; params: SalesParams }) {
   const today = colomboDate();
   const period = resolvePeriod(params, today);
   const top = DIMENSIONS.find((d) => d === params.top) ?? "parts";
   const sort = SORTS.find((s) => s === params.sort) ?? "sales";
 
-  let data: SalesAnalytics;
-  try {
-    data = await getSalesAnalytics(user, period, { dimension: top, sort });
-  } catch (e) {
-    console.error("Sales analytics failed", e);
-    return (
-      <SectionFrame>
-        <p role="alert" className="rounded-lg border bg-card p-5 text-sm text-destructive">
-          Couldn&apos;t load sales figures
-        </p>
-      </SectionFrame>
-    );
-  }
-
   const keep: Record<string, string> = {};
   if (top !== "parts") keep.top = top;
   if (sort !== "sales") keep.sort = sort;
-  const compareLabel = formatRange(period.compare, today);
   const periodParams: SalesParams = period.preset === "custom" ? { ...period.range } : { period: period.preset };
-  const periodLabel = formatRange(period.range, today);
+  const periodKey = `${period.range.from}|${period.range.to}`;
 
   return (
-    <SectionFrame
-      periodLabel={periodLabel}
-      picker={
+    <section aria-labelledby="sales-heading" className="mt-2 border-t pt-6">
+      {/* Title and period button share one row, on a phone too; the dates sit under the title. */}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 id="sales-heading" className="text-lg font-semibold tracking-tight">
+            Sales &amp; profit
+          </h2>
+          <p className="text-sm text-muted-foreground">{formatRange(period.range, today)}</p>
+        </div>
         <PeriodPicker
           presets={PERIOD_PRESETS.map((p) => ({
             label: p.label,
@@ -84,46 +81,71 @@ export async function SalesSection({ user, params }: { user: SessionUser; params
           today={today}
           keep={keep}
         />
-      }
-    >
-      <KpiTiles current={data.current} previous={data.previous} compareLabel={compareLabel} />
-      <SalesTrendChart points={data.trend} bucket={period.bucket} />
-      <CashCredit totals={data.current} />
-      <TopSellers
-        rows={data.top}
-        dimension={top}
-        sort={sort}
-        hrefFor={(change) => dashboardHref({ ...periodParams, top, sort, ...change })}
-      />
-    </SectionFrame>
+      </div>
+      <div className="grid gap-4">
+        <Suspense key={periodKey} fallback={<SummarySkeleton />}>
+          <SalesFigures user={user} period={period} compareLabel={formatRange(period.compare, today)} />
+        </Suspense>
+        <Suspense key={`${periodKey}|${top}|${sort}`} fallback={<TableSkeleton />}>
+          <TopSellersTable
+            user={user}
+            period={period}
+            top={top}
+            sort={sort}
+            hrefFor={(change) => dashboardHref({ ...periodParams, top, sort, ...change })}
+          />
+        </Suspense>
+      </div>
+    </section>
   );
 }
 
-/** Set apart from the "now" part above by a rule, with the period named in its heading. */
-function SectionFrame({
-  periodLabel,
-  picker,
-  children,
-}: {
-  periodLabel?: string;
-  picker?: React.ReactNode;
-  children: React.ReactNode;
-}) {
+function LoadFailed() {
   return (
-    <section aria-labelledby="sales-heading" className="mt-2 border-t pt-6">
-      {/* Title and period button share one row, on a phone too; the dates sit under the title. */}
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 id="sales-heading" className="text-lg font-semibold tracking-tight">
-            Sales &amp; profit
-          </h2>
-          {periodLabel && <p className="text-sm text-muted-foreground">{periodLabel}</p>}
-        </div>
-        {picker}
-      </div>
-      <div className="grid gap-4">{children}</div>
-    </section>
+    <p role="alert" className="rounded-lg border bg-card p-5 text-sm text-destructive">
+      Couldn&apos;t load sales figures
+    </p>
   );
+}
+
+async function SalesFigures({ user, period, compareLabel }: { user: SessionUser; period: Period; compareLabel: string }) {
+  let data;
+  try {
+    data = await getSalesSummary(user, period);
+  } catch (e) {
+    console.error("Sales summary failed", e);
+    return <LoadFailed />;
+  }
+  return (
+    <>
+      <KpiTiles current={data.current} previous={data.previous} compareLabel={compareLabel} />
+      <SalesTrendChart points={data.trend} bucket={period.bucket} />
+      <CashCredit totals={data.current} />
+    </>
+  );
+}
+
+async function TopSellersTable({
+  user,
+  period,
+  top,
+  sort,
+  hrefFor,
+}: {
+  user: SessionUser;
+  period: Period;
+  top: TopDimension;
+  sort: TopSort;
+  hrefFor: (change: { top?: TopDimension; sort?: TopSort }) => string;
+}) {
+  let rows;
+  try {
+    rows = await getTopSellerTable(user, period.range, { dimension: top, sort });
+  } catch (e) {
+    console.error("Top sellers failed", e);
+    return <LoadFailed />;
+  }
+  return <TopSellers rows={rows} dimension={top} sort={sort} hrefFor={hrefFor} />;
 }
 
 function KpiTiles({ current, previous, compareLabel }: { current: SalesTotals; previous: SalesTotals; compareLabel: string }) {
@@ -219,16 +241,22 @@ function CashCredit({ totals }: { totals: SalesTotals }) {
   );
 }
 
-export function SalesSectionSkeleton() {
+function SummarySkeleton() {
   return (
-    <section aria-label="Loading sales" className="mt-2 animate-pulse border-t pt-6">
-      <div className="mb-4 h-7 w-40 rounded-md bg-muted" />
+    <div role="status" aria-label="Loading sales" className="grid animate-pulse gap-4">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => (
           <div key={i} className="h-28 rounded-lg border bg-card" />
         ))}
       </div>
-      <div className="mt-4 h-72 rounded-lg border bg-card" />
-    </section>
+      <div className="h-72 rounded-lg border bg-card" />
+      <div className="h-24 rounded-lg border bg-card" />
+    </div>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div role="status" aria-label="Loading top sellers" className="h-80 animate-pulse rounded-lg border bg-card" />
   );
 }

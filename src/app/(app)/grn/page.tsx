@@ -1,6 +1,9 @@
 import { Plus } from "lucide-react";
+import Form from "next/form";
 import Link from "next/link";
+import { Suspense } from "react";
 import { PageHeader } from "@/components/page-header";
+import { TableSkeleton } from "@/components/table-skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -21,12 +24,8 @@ type SearchParams = Promise<{ q?: string; supplier?: string }>;
 export default async function GrnListPage({ searchParams }: { searchParams: SearchParams }) {
   await requireUser();
   const { q = "", supplier = "" } = await searchParams;
-  const [rows, suppliers] = await Promise.all([
-    listGrns({ q, supplierId: supplier || undefined }),
-    listSuppliers(),
-  ]);
-
-  const totalColumn = moneyColumn(rows.map((g) => g.total));
+  const filterKey = JSON.stringify({ q, supplier });
+  const suppliers = await listSuppliers();
   return (
     <div>
       <PageHeader
@@ -38,7 +37,7 @@ export default async function GrnListPage({ searchParams }: { searchParams: Sear
           </Link>
         }
       />
-      <form className="mb-4 flex flex-wrap gap-2" role="search">
+      <Form key={`form:${filterKey}`} action="/grn" className="mb-4 flex flex-wrap gap-2" role="search">
         <Input name="q" defaultValue={q} placeholder="GRN or supplier invoice no" aria-label="Search GRNs" className="w-full sm:w-64" />
         <NativeSelect name="supplier" defaultValue={supplier} aria-label="Supplier">
           <NativeSelectOption value="">All suppliers</NativeSelectOption>
@@ -51,44 +50,56 @@ export default async function GrnListPage({ searchParams }: { searchParams: Sear
         <Button type="submit" variant="secondary">
           Search
         </Button>
-      </form>
-      <div className="rounded-lg border bg-card">
-        <Table>
-          <TableHeader>
+      </Form>
+      {/* Only the table reloads on a search; the header and the form stay on screen. */}
+      <Suspense key={filterKey} fallback={<TableSkeleton label="Loading goods received" />}>
+        <GrnTable q={q} supplier={supplier} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function GrnTable({ q, supplier }: { q: string; supplier: string }) {
+  const rows = await listGrns({ q, supplierId: supplier || undefined });
+
+  const totalColumn = moneyColumn(rows.map((g) => g.total));
+  return (
+    <div className="rounded-lg border bg-card">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>GRN</TableHead>
+            <TableHead>Received</TableHead>
+            <TableHead>Supplier</TableHead>
+            <TableHead className="hidden md:table-cell">Supplier invoice</TableHead>
+            <TableHead className="text-right">Lines</TableHead>
+            <TableHead className="text-right">Total (Rs)</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.length === 0 && (
             <TableRow>
-              <TableHead>GRN</TableHead>
-              <TableHead>Received</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead className="hidden md:table-cell">Supplier invoice</TableHead>
-              <TableHead className="text-right">Lines</TableHead>
-              <TableHead className="text-right">Total (Rs)</TableHead>
+              <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                {q || supplier ? "No GRNs match." : "No goods received yet. Record a delivery with Receive goods."}
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                  {q || supplier ? "No GRNs match." : "No goods received yet. Record a delivery with Receive goods."}
-                </TableCell>
-              </TableRow>
-            )}
-            {rows.map((g) => (
-              <TableRow key={g.id}>
-                <TableCell className="font-medium">
-                  <Link href={`/grn/${g.id}`} className="hover:underline">
-                    {g.number}
-                  </Link>
-                </TableCell>
-                <TableCell>{formatDate(g.receivedDate)}</TableCell>
-                <TableCell>{g.supplierName}</TableCell>
-                <TableCell className="hidden md:table-cell">{g.supplierInvoiceNo}</TableCell>
-                <TableCell className="text-right tabular-nums">{g.itemCount}</TableCell>
-                <TableCell className="text-right tabular-nums">{totalColumn(g.total)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+          )}
+          {rows.map((g) => (
+            <TableRow key={g.id}>
+              <TableCell className="font-medium">
+                <Link href={`/grn/${g.id}`} className="hover:underline">
+                  {g.number}
+                </Link>
+              </TableCell>
+              <TableCell>{formatDate(g.receivedDate)}</TableCell>
+              <TableCell>{g.supplierName}</TableCell>
+              <TableCell className="hidden md:table-cell">{g.supplierInvoiceNo}</TableCell>
+              <TableCell className="text-right tabular-nums">{g.itemCount}</TableCell>
+              <TableCell className="text-right tabular-nums">{totalColumn(g.total)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

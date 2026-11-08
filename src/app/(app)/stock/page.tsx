@@ -1,4 +1,5 @@
 import { ClipboardList, Plus } from "lucide-react";
+import Form from "next/form";
 import Link from "next/link";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/page-header";
@@ -18,7 +19,15 @@ import { StockLevel } from "@/components/stock-level";
 import { colomboDate } from "@/lib/dates";
 import { formatDate, formatSince, moneyColumn } from "@/lib/format";
 import { D, fmt, sum } from "@/lib/money";
-import { ABC_CLASSES, isAbcClass, isStockAgeBand, STOCK_AGE_BANDS, type AbcClass, type StockAgeBand } from "@/lib/stock-health";
+import {
+  ABC_CLASSES,
+  isAbcClass,
+  isStockAgeBand,
+  STOCK_AGE_BANDS,
+  type AbcClass,
+  type StockAgeBand,
+  type StockHealth,
+} from "@/lib/stock-health";
 import { requireUser, type SessionUser } from "@/server/auth";
 import { listCategories } from "@/server/services/catalog";
 import { stockList } from "@/server/services/inventory";
@@ -34,6 +43,26 @@ export default async function StockPage({ searchParams }: { searchParams: Search
   // Health filters are admin-only; for staff the params are ignored.
   const age: StockAgeBand | null = isAdmin && isStockAgeBand(params.age) ? params.age : null;
   const cls: AbcClass | null = isAdmin && !age && isAbcClass(params.class) ? params.class : null;
+  // Started once and shared by the summary and the list, which both need it.
+  const health = isAdmin ? getStockHealth(user) : null;
+  const categories = await listCategories();
+  const filterKey = JSON.stringify({ q, category, low, age, cls });
+  /** /stock keeping the search, category and low filters; one health filter at a time. */
+  const hrefFor = (f: { age?: StockAgeBand; cls?: AbcClass }) => {
+    const p = new URLSearchParams();
+    if (q) p.set("q", q);
+    if (category) p.set("category", category);
+    if (low === "1") p.set("low", "1");
+    if (f.age) p.set("age", f.age);
+    if (f.cls) p.set("class", f.cls);
+    const s = p.toString();
+    return s ? `/stock?${s}` : "/stock";
+  };
+  const filterLabel = age
+    ? STOCK_AGE_BANDS.find((b) => b.key === age)?.label
+    : cls
+      ? `class ${ABC_CLASSES.find((c) => c.key === cls)?.label}`
+      : null;
 
   return (
     <div>
@@ -51,65 +80,13 @@ export default async function StockPage({ searchParams }: { searchParams: Search
           </>
         }
       />
-      {/* Keyed by the filters so a health filter link re-suspends here (see the Payments page). */}
-      <Suspense key={JSON.stringify({ q, category, low, age, cls })} fallback={<StockSkeleton />}>
-        <StockView user={user} q={q} category={category} low={low} age={age} cls={cls} />
-      </Suspense>
-    </div>
-  );
-}
-
-async function StockView({
-  user,
-  q,
-  category,
-  low,
-  age,
-  cls,
-}: {
-  user: SessionUser;
-  q: string;
-  category: string;
-  low: string;
-  age: StockAgeBand | null;
-  cls: AbcClass | null;
-}) {
-  const isAdmin = user.role === "admin";
-  const [categories, health] = await Promise.all([listCategories(), isAdmin ? getStockHealth(user) : null]);
-  // A band or class narrows the list in SQL (by part id), so the list's row limit comes after it.
-  const partIds =
-    health && (age || cls)
-      ? Object.entries(health.byPart)
-          .filter(([, h]) => (age ? h.band === age : h.cls === cls))
-          .map(([id]) => id)
-      : undefined;
-  const rows = await stockList(user, { q, categoryId: category || undefined, lowOnly: low === "1", partIds });
-  const partHealth = (id: string) => health?.byPart[id] ?? { lastSoldOn: null, band: null, cls: "none" as const };
-  /** /stock keeping the search, category and low filters; one health filter at a time. */
-  const hrefFor = (f: { age?: StockAgeBand; cls?: AbcClass }) => {
-    const p = new URLSearchParams();
-    if (q) p.set("q", q);
-    if (category) p.set("category", category);
-    if (low === "1") p.set("low", "1");
-    if (f.age) p.set("age", f.age);
-    if (f.cls) p.set("class", f.cls);
-    const s = p.toString();
-    return s ? `/stock?${s}` : "/stock";
-  };
-  const filterLabel = age
-    ? STOCK_AGE_BANDS.find((b) => b.key === age)?.label
-    : cls
-      ? `class ${ABC_CLASSES.find((c) => c.key === cls)?.label}`
-      : null;
-  const totalValue = isAdmin ? fmt(sum(rows.map((r) => D(r.stockValue ?? "0")))) : null;
-  const avgCost = moneyColumn(rows.map((r) => r.avgCost));
-  const valueColumn = moneyColumn([...rows.map((r) => r.stockValue), totalValue]);
-  const today = colomboDate();
-
-  return (
-    <>
-      {health && <StockHealthSummary health={health} age={age} cls={cls} hrefFor={hrefFor} />}
-      <form className="mb-4 flex flex-wrap items-center gap-2" role="search">
+      {isAdmin && health && (
+        <Suspense fallback={<HealthSkeleton />}>
+          <HealthBlock health={health} age={age} cls={cls} hrefFor={hrefFor} />
+        </Suspense>
+      )}
+      {/* Keyed by the filters so it shows the new values after a filter link or "Show all". */}
+      <Form key={`form:${filterKey}`} action="/stock" className="mb-4 flex flex-wrap items-center gap-2" role="search">
         {age && <input type="hidden" name="age" value={age} />}
         {cls && <input type="hidden" name="class" value={cls} />}
         <Input name="q" defaultValue={q} placeholder="SKU, name or OEM no" aria-label="Search stock" className="w-full sm:w-64" />
@@ -128,7 +105,7 @@ async function StockView({
         <Button type="submit" variant="secondary">
           Show
         </Button>
-      </form>
+      </Form>
       {filterLabel && (
         <p className="mb-3 text-sm text-muted-foreground">
           Showing {filterLabel} ·{" "}
@@ -137,7 +114,60 @@ async function StockView({
           </Link>
         </p>
       )}
+      {/* Only the list reloads when a filter changes; the summary and the search stay on screen. */}
+      <Suspense key={filterKey} fallback={<TableSkeleton />}>
+        <StockTable user={user} health={health} q={q} category={category} low={low} age={age} cls={cls} />
+      </Suspense>
+    </div>
+  );
+}
 
+async function HealthBlock({
+  health,
+  ...props
+}: {
+  health: Promise<StockHealth>;
+  age: StockAgeBand | null;
+  cls: AbcClass | null;
+  hrefFor: (f: { age?: StockAgeBand; cls?: AbcClass }) => string;
+}) {
+  return <StockHealthSummary health={await health} {...props} />;
+}
+
+async function StockTable({
+  user,
+  health: healthPromise,
+  q,
+  category,
+  low,
+  age,
+  cls,
+}: {
+  user: SessionUser;
+  health: Promise<StockHealth> | null;
+  q: string;
+  category: string;
+  low: string;
+  age: StockAgeBand | null;
+  cls: AbcClass | null;
+}) {
+  const isAdmin = user.role === "admin";
+  const health = await healthPromise;
+  // A band or class narrows the list in SQL (by part id), so the list's row limit comes after it.
+  const partIds =
+    health && (age || cls)
+      ? Object.entries(health.byPart)
+          .filter(([, h]) => (age ? h.band === age : h.cls === cls))
+          .map(([id]) => id)
+      : undefined;
+  const rows = await stockList(user, { q, categoryId: category || undefined, lowOnly: low === "1", partIds });
+  const partHealth = (id: string) => health?.byPart[id] ?? { lastSoldOn: null, band: null, cls: "none" as const };
+  const totalValue = isAdmin ? fmt(sum(rows.map((r) => D(r.stockValue ?? "0")))) : null;
+  const avgCost = moneyColumn(rows.map((r) => r.avgCost));
+  const valueColumn = moneyColumn([...rows.map((r) => r.stockValue), totalValue]);
+  const today = colomboDate();
+
+  return (
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>
@@ -222,16 +252,14 @@ async function StockView({
             </TableFooter>
           )}
         </Table>
-      </div>
-    </>
+    </div>
   );
 }
 
-function StockSkeleton() {
-  return (
-    <div role="status" aria-label="Loading" className="animate-pulse">
-      <div className="mb-4 h-9 w-full max-w-xl rounded-md bg-muted" />
-      <div className="h-72 rounded-lg border bg-card" />
-    </div>
-  );
+function HealthSkeleton() {
+  return <div role="status" aria-label="Loading stock health" className="mb-6 h-40 animate-pulse rounded-lg border bg-card" />;
+}
+
+function TableSkeleton() {
+  return <div role="status" aria-label="Loading stock" className="h-72 animate-pulse rounded-lg border bg-card" />;
 }
