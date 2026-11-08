@@ -26,6 +26,8 @@ export function ClosedDays({ closedDays, today }: { closedDays: TargetSettings["
         setError(result.error.message);
         return;
       }
+      // No router.refresh(): the action revalidates /settings, so its response already carries the
+      // new list. A refresh racing that response can leave the transition pending forever.
       done();
     });
   }

@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { Forbidden } from "@/server/errors";
 import { createInvoice } from "@/server/services/invoicing";
 import { getInvoicePrintData } from "@/server/services/print";
-import { getSettings, updateSettings, type SettingsInput } from "@/server/services/settings";
+import { findSettings, getSettings, updateSettings, type SettingsInput } from "@/server/services/settings";
+import { db } from "@/server/db/client";
+import { logo, settings } from "@/server/db/schema";
 import { resetDb } from "../helpers/db";
 import { makeCustomer, makePart, makeUser } from "../helpers/factories";
 
@@ -24,6 +26,12 @@ describe("settings", () => {
     await resetDb();
   });
 
+  it("findSettings gives the row, or null when there is none", async () => {
+    await expect(findSettings()).resolves.toMatchObject({ id: 1 });
+    await db.delete(settings);
+    await expect(findSettings()).resolves.toBeNull();
+  });
+
   it("returns the seeded defaults", async () => {
     const s = await getSettings();
     expect(s).toMatchObject({
@@ -33,6 +41,31 @@ describe("settings", () => {
       defaultCreditDays: 30,
       docPrefix: "",
     });
+  });
+
+  it("saving with no logo deletes the stored logo", async () => {
+    const admin = await makeUser("admin");
+    await db.insert(logo).values({ contentType: "image/png", data: Buffer.from([0x89, 0x50]) });
+    await updateSettings(admin, { ...base, logoUrl: null });
+    expect(await db.select().from(logo)).toHaveLength(0);
+  });
+
+  it("keeps the stored logo when the logo address is left as it is", async () => {
+    const admin = await makeUser("admin");
+    await db.insert(logo).values({ contentType: "image/png", data: Buffer.from([0x89, 0x50]) });
+    await updateSettings(admin, { ...base, logoUrl: "/api/logo?v=17" });
+    expect(await db.select().from(logo)).toHaveLength(1);
+  });
+
+  it("accepts only an /api/logo address or an https link as the logo", async () => {
+    const admin = await makeUser("admin");
+    for (const ok of ["/api/logo?v=17", "https://x.supabase.co/storage/v1/object/public/branding/a.png"]) {
+      await updateSettings(admin, { ...base, logoUrl: ok });
+      expect((await getSettings()).logoUrl).toBe(ok);
+    }
+    for (const bad of ["http://x/a.png", "javascript:alert(1)", "/api/logo?v=abc", "/elsewhere.png"]) {
+      await expect(updateSettings(admin, { ...base, logoUrl: bad })).rejects.toThrow();
+    }
   });
 
   it("is admin only", async () => {

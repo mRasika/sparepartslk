@@ -31,13 +31,15 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".next-build/types/**/*.ts",
     ".next-e2e/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-build/types/**/*.ts"
+    ".next-e2e-setup/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
-    ".next-e2e"
+    ".next-e2e",
+    ".next-e2e-setup"
   ]
 }

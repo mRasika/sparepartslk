@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { eq } from "drizzle-orm";
 import { InvoicePdf } from "@/components/print/invoice-pdf";
@@ -12,6 +13,7 @@ import { resetDb } from "../helpers/db";
 import { makeCustomer, makePart, makeUser } from "../helpers/factories";
 
 let staff: SessionUser;
+const PNG = readFileSync("e2e/fixtures/logo.png");
 
 async function sell() {
   const customer = await makeCustomer({ name: "Ruwan Traders" });
@@ -56,6 +58,17 @@ describe("getInvoicePrintData", () => {
     expect(pdf.toString("latin1").match(/\/Type \/Page\b/g)).toHaveLength(1);
     // A4 is 595.28 x 841.89 points.
     expect(pdf.toString("latin1")).toMatch(/\/MediaBox\s*\[\s*0\s+0\s+595\.2\d*\s+841\.8\d*\s*\]/);
+  });
+
+  it("draws the logo on the PDF when there is one", async () => {
+    const inv = await sell();
+    const data = await getInvoicePrintData(staff, inv.id);
+    const imageCount = (pdf: Buffer) => pdf.toString("latin1").match(/\/Subtype \/Image\b/g)?.length ?? 0;
+
+    const withLogo = Buffer.from(await renderToBuffer(InvoicePdf({ data, logo: { data: PNG, format: "png" } })));
+    expect(imageCount(withLogo)).toBe(1);
+    const without = Buffer.from(await renderToBuffer(InvoicePdf({ data })));
+    expect(imageCount(without)).toBe(0);
   });
 
   it("marks a cancelled invoice", async () => {

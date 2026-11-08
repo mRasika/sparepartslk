@@ -89,11 +89,11 @@ export function SettingsForm({ initial }: { initial: Values }) {
             <div className="grid h-14 w-24 place-items-center rounded border border-dashed text-xs text-muted-foreground">No logo</div>
           )}
           <div className="grid gap-1.5">
-            <Label htmlFor="logo">Logo (PNG, JPG or WebP, under 1 MB)</Label>
+            <Label htmlFor="logo">Logo (PNG or JPG, under 1 MB)</Label>
             <Input
               id="logo"
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/png,image/jpeg"
               disabled={uploading}
               onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
             />

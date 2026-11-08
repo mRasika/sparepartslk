@@ -9,10 +9,12 @@ import {
   RESET_CODE_MINUTES,
   RESET_CODE_TRIES,
 } from "@/lib/reset-code";
+import { displayName } from "@/lib/business-name";
 import { setPassword } from "@/server/auth-admin";
 import { db } from "@/server/db/client";
 import { passwordResetCodes, profiles } from "@/server/db/schema";
 import { sendEmail as realSendEmail, type SendEmail } from "@/server/email";
+import { findSettings } from "@/server/services/settings";
 import { DAY, HOUR, takeLimit } from "@/server/rate-limit";
 
 export const REQUESTS_PER_EMAIL_HOUR = 3;
@@ -36,6 +38,9 @@ async function findResettable(email: string) {
     .where(and(eq(profiles.email, email), eq(profiles.isActive, true), eq(profiles.canGetEmails, true)));
   return user ?? null;
 }
+
+/** This company's name for email subjects (read fresh: services don't use the page cache). */
+const companyName = async () => displayName((await findSettings())?.businessName);
 
 const colomboDateTime = (d: Date) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Colombo", dateStyle: "medium", timeStyle: "short" }).format(d);
@@ -72,7 +77,7 @@ export async function requestResetCode(
     // Only ever to the email already on the login; the code stays out of the subject (lock screens).
     const sent = await (deps.send ?? realSendEmail)({
       to: user.email,
-      subject: "Your Sparepartslk password code",
+      subject: `Your ${await companyName()} password code`,
       text:
         `Your code is ${code}\n\n` +
         `Type it on the Forgot password page. It works for ${RESET_CODE_MINUTES} minutes, once.\n\n` +
@@ -161,7 +166,7 @@ export async function resetWithCode(
     // A notice that fails to send never undoes the reset.
     const notice = await (deps.send ?? realSendEmail)({
       to: user.email,
-      subject: "Your Sparepartslk password was changed",
+      subject: `Your ${await companyName()} password was changed`,
       text:
         `Your password was changed on ${colomboDateTime(now)} using a code sent to this email.\n\n` +
         "If this wasn't you, tell the admin at once.",
