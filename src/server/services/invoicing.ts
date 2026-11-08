@@ -66,14 +66,18 @@ export type InvoiceInput = z.input<typeof invoiceInputSchema>;
 /** Noon Colombo time on a business date, so the number's year matches the invoice date. */
 const atBusinessDate = (date: string) => new Date(`${date}T12:00:00+05:30`);
 
-/** The quotation an invoice converts, or null. Only an open (valid or expired) one can convert. */
-async function convertibleQuotation(tx: Executor, id: string | undefined, lock: boolean) {
+/**
+ * The quotation an invoice converts, or null. Only an open (valid or expired) one can convert, and
+ * only for its own customer: its prices were set for that customer's tier (SEC-001).
+ */
+async function convertibleQuotation(tx: Executor, id: string | undefined, customerId: string, lock: boolean) {
   if (!id) return null;
   const quote = await loadQuotationPrices(tx, id, { lock });
   if (quote.status === "converted") {
     throw new InvalidState(`${quote.number} was already converted to ${quote.invoiceNumber}`);
   }
   if (quote.status === "cancelled") throw new InvalidState(`${quote.number} is cancelled`);
+  if (quote.customerId !== customerId) throw new InvalidState(`${quote.number} is for another customer`);
   return quote;
 }
 
@@ -123,7 +127,7 @@ export async function createInvoice(
     }
     // 2a. A quotation being converted is locked after the customer, so two people converting it
     // at once can't both succeed: the second sees it converted.
-    const quote = await convertibleQuotation(tx, data.quotationId, true);
+    const quote = await convertibleQuotation(tx, data.quotationId, customer.id, true);
 
     // 3–5. Prices (quoted where the quotation is still valid), totals and the staff discount cap.
     const prices = await invoicePrices(tx, customer.tierId, data.lines.map((l) => l.partId), quote);
@@ -332,7 +336,7 @@ export async function previewInvoice(
   const settings = await getSettings();
   const [customer] = await db.select().from(customers).where(eq(customers.id, data.customerId));
   if (!customer) throw new NotFound("Customer not found");
-  const quote = await convertibleQuotation(db, data.quotationId, false);
+  const quote = await convertibleQuotation(db, data.quotationId, customer.id, false);
 
   const partIds = data.lines.map((l) => l.partId);
   const prices = await invoicePrices(db, customer.tierId, partIds, quote);

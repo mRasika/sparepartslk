@@ -242,7 +242,27 @@ export function InvoiceEditor({
     >
       <div className="grid min-w-0 content-start gap-4">
         <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
-          <CustomerPicker value={customer} onChange={changeCustomer} allowAdd />
+          {quotation ? (
+            // A quotation's prices are for its own customer's tier, so it can't be issued to anyone
+            // else (SEC-001); the server refuses it too. Billing someone else = edit the quotation.
+            <div className="grid gap-1.5">
+              <label htmlFor="customer-fixed" className="text-sm font-medium">
+                Customer
+              </label>
+              <input
+                id="customer-fixed"
+                value={customer.name}
+                readOnly
+                aria-describedby="customer-fixed-hint"
+                className="h-10 w-full rounded-lg border border-input bg-muted px-3 text-sm font-medium outline-none"
+              />
+              <p id="customer-fixed-hint" className="text-xs text-muted-foreground">
+                Set by {quotation.number}. To bill someone else, edit the quotation&apos;s customer first.
+              </p>
+            </div>
+          ) : (
+            <CustomerPicker value={customer} onChange={changeCustomer} allowAdd />
+          )}
           <fieldset className="grid content-start gap-1.5">
             <legend className="mb-1.5 text-sm font-medium">Payment</legend>
             <div

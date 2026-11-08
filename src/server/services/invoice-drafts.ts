@@ -112,7 +112,7 @@ export async function getInvoiceDraftForEditor(id: string): Promise<EditorDraft 
 
   const customer = await getCustomer(draft.customerId);
   const partIds = draft.data.lines.map((l) => l.partId);
-  const [partRows, prices, fromQuote] = await Promise.all([
+  const [partRows, prices, quoted] = await Promise.all([
     partIds.length
       ? db
           .select({
@@ -129,6 +129,9 @@ export async function getInvoiceDraftForEditor(id: string): Promise<EditorDraft 
     lookupPrices(db, customer.tierId, partIds),
     draft.data.quotationId ? getQuotationForInvoice(draft.data.quotationId) : null,
   ]);
+  // A quotation only converts for its own customer (SEC-001); drafts saved before that rule may
+  // have switched the customer, so they reopen as plain invoices at that customer's prices.
+  const fromQuote = quoted?.customer.id === draft.customerId ? quoted : null;
   const byId = new Map(partRows.map((p) => [p.id, p]));
   if (fromQuote && !fromQuote.quotation.expired) {
     for (const { part } of fromQuote.lines) if (part.price) prices.set(part.id, part.price);
