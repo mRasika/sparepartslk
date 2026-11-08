@@ -23,6 +23,8 @@ test("a quotation is printed, converted and linked to its invoice", async ({ pag
   // The editor opens with the quotation's lines; payment is still the cashier's choice.
   await page.getByRole("link", { name: "Convert to invoice" }).click();
   await expect(page.getByText(/From quotation QUO-/)).toBeVisible();
+  // SEC-001: the quotation's prices are for its customer, so the customer can't be switched here.
+  await expect(page.getByLabel("Customer")).not.toBeEditable();
   await expect(page.getByLabel("Qty for BRK-001")).toHaveValue("3");
   await page.getByLabel("Qty for BRK-001").fill("1");
   await page.getByRole("radio", { name: "Cash" }).click();
