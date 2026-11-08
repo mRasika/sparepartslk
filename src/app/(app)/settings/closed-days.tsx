@@ -1,7 +1,6 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,7 +13,6 @@ import type { TargetSettings } from "@/server/services/sales-targets";
 
 /** Upcoming days the shop is shut beyond its closed weekdays (Poya days, holidays). */
 export function ClosedDays({ closedDays, today }: { closedDays: TargetSettings["closedDays"]; today: string }) {
-  const router = useRouter();
   const [day, setDay] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +26,9 @@ export function ClosedDays({ closedDays, today }: { closedDays: TargetSettings["
         setError(result.error.message);
         return;
       }
+      // No router.refresh(): the action revalidates /settings, so its response already carries the
+      // new list. A refresh racing that response can leave the transition pending forever.
       done();
-      router.refresh();
     });
   }
 
