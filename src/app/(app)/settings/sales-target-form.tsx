@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,7 +17,6 @@ const closedNames = (days: number[]) => (days.length ? days.map((d) => WEEKDAYS[
 
 /** The daily net-sales target; a save applies from today on (spec §4). */
 export function SalesTargetForm({ current, previous }: Pick<TargetSettings, "current" | "previous">) {
-  const router = useRouter();
   const [dailyTarget, setDailyTarget] = useState(current?.dailyTarget ?? "");
   const [closed, setClosed] = useState<number[]>(current?.closedWeekdays ?? []);
   const [error, setError] = useState<ActionError | null>(null);
@@ -35,7 +33,6 @@ export function SalesTargetForm({ current, previous }: Pick<TargetSettings, "cur
         return;
       }
       toast.success("Sales target saved");
-      router.refresh();
     });
   }
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { Ban } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,7 +18,6 @@ import { cancelQuotationAction } from "@/server/actions/quotations";
 
 /** Cancels an open or expired quotation with a reason. The number is kept. Any signed-in user. */
 export function CancelQuotationDialog({ quotationId, number }: { quotationId: string; number: string }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +33,6 @@ export function CancelQuotationDialog({ quotationId, number }: { quotationId: st
       }
       toast.success(`${number} cancelled.`);
       setOpen(false);
-      router.refresh();
     });
   }
 
