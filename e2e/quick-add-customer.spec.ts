@@ -6,6 +6,8 @@ test("staff add a new customer from the picker and quote them", async ({ page })
   test.setTimeout(180_000);
   await login(page, "staff");
   await page.goto("/quotations/new");
+  // A production build shows the page before React takes it over; text typed before then is lost.
+  await page.waitForLoadState("networkidle");
 
   // A typed phone number goes to Phone, not Name.
   await page.getByLabel("Customer").fill("0771234567");

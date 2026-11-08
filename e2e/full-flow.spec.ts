@@ -55,6 +55,8 @@ test("part → GRN → credit invoice → print → low stock → payment → re
 
   await test.step("staff issues a credit invoice for 6 at the Dealer price", async () => {
     await staff.goto("/invoices/new");
+    // A production build shows the page before React takes it over; text typed before then is lost.
+    await staff.waitForLoadState("networkidle");
     await staff.getByLabel("Customer").fill("Nimal");
     await staff.getByRole("option", { name: /Nimal Perera/ }).click();
     await staff.getByRole("radio", { name: "Credit" }).click();

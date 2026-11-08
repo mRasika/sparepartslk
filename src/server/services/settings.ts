@@ -3,9 +3,15 @@ import { z } from "zod";
 import { D, fmt } from "@/lib/money";
 import { requireRole, type SessionUser } from "@/server/auth";
 import { db, type Executor } from "@/server/db/client";
-import { settings } from "@/server/db/schema";
+import { logo, settings } from "@/server/db/schema";
 
 export type Settings = typeof settings.$inferSelect;
+
+/** The settings row, or null on a database that hasn't been set up yet. */
+export async function findSettings(tx: Executor = db): Promise<Settings | null> {
+  const [row] = await tx.select().from(settings);
+  return row ?? null;
+}
 
 /** The single settings row (seeded by insertBaseData). */
 export async function getSettings(tx: Executor = db): Promise<Settings> {
@@ -36,7 +42,10 @@ export const settingsInputSchema = z.object({
     .string()
     .trim()
     .regex(/^[A-Z0-9]{0,6}$/, "Use up to 6 capital letters or digits"),
-  logoUrl: z.url().nullish(),
+  // The stored logo (/api/logo?v=…), or an https link saved before the logo moved into the database.
+  logoUrl: z
+    .union([z.string().regex(/^\/api\/logo\?v=\d+$/), z.url({ protocol: /^https$/ })], { error: "Upload the logo again" })
+    .nullish(),
 });
 
 export type SettingsInput = z.input<typeof settingsInputSchema>;
@@ -44,8 +53,12 @@ export type SettingsInput = z.input<typeof settingsInputSchema>;
 export async function updateSettings(user: SessionUser, input: SettingsInput): Promise<void> {
   requireRole(user, "admin");
   const data = settingsInputSchema.parse(input);
-  await db
-    .update(settings)
-    .set({ ...data, logoUrl: data.logoUrl === undefined ? undefined : data.logoUrl, updatedAt: new Date() })
-    .where(eq(settings.id, 1));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(settings)
+      .set({ ...data, logoUrl: data.logoUrl === undefined ? undefined : data.logoUrl, updatedAt: new Date() })
+      .where(eq(settings.id, 1));
+    // "Remove logo" then Save: the stored picture goes too.
+    if (data.logoUrl === null) await tx.delete(logo);
+  });
 }

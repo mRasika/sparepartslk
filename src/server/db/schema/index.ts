@@ -6,3 +6,4 @@ export * from "./ledger";
 export * from "./targets";
 export * from "./password-reset";
 export * from "./auth";
+export * from "./logo";

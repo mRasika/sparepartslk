@@ -22,9 +22,8 @@ Design: [`docs/superpowers/specs/2026-10-22-stock-billing-mvp-design.md`](docs/s
 
 ```sh
 pnpm install
-pnpm supabase start          # Postgres (and Storage) in Docker; prints the keys
-cp .env.example .env.local   # paste the anon and service_role keys printed above,
-                             # and set BETTER_AUTH_SECRET (openssl rand -hex 32)
+pnpm supabase start          # local Postgres in Docker (the Supabase CLI is only a dev tool here)
+cp .env.example .env.local   # set BETTER_AUTH_SECRET (openssl rand -hex 32)
 pnpm db:migrate
 pnpm db:seed -- --admin-email you@example.com --admin-password 'choose-a-password'
 pnpm dev                     # http://localhost:3000
@@ -33,7 +32,7 @@ pnpm dev                     # http://localhost:3000
 Sign in with the admin you just seeded, then add staff under **Users**.
 For realistic test data, run `pnpm db:seed-demo` (local only; production is set up with `db:seed` alone, so it starts empty).
 To start the local database over: `pnpm supabase db reset`, then `pnpm db:migrate`, `pnpm db:seed …` and optionally `pnpm db:seed-demo`.
-`pnpm supabase status` prints the keys again; Supabase Studio runs at <http://127.0.0.1:54323>.
+Supabase Studio (to look at the local database) runs at <http://127.0.0.1:54323>.
 
 ## Commands
 
@@ -41,7 +40,7 @@ To start the local database over: `pnpm supabase db reset`, then `pnpm db:migrat
 | --- | --- |
 | `pnpm dev` | Run the app |
 | `pnpm test` | Service and unit tests (Vitest) against the `sparepartslk_test` database, created and migrated automatically |
-| `pnpm test:e2e` | End-to-end tests (Playwright, installed Chrome). Starts its own server on port 3100 against the test database and resets it first |
+| `pnpm test:e2e` | End-to-end tests (Playwright, installed Chrome) against a production build (`next build` + `next start`). First the main specs on port 3100 against the test database (reset first), then the new-company setup walk-through on port 3101 against an empty database. `E2E_SERVER_LOG=1` shows the server's log |
 | `pnpm typecheck` | TypeScript check |
 | `pnpm lint` | ESLint |
 | `pnpm build` | Production build |
@@ -54,26 +53,26 @@ To start the local database over: `pnpm supabase db reset`, then `pnpm db:migrat
 
 ## Deploying (Vercel + Supabase)
 
-1. **Create a Supabase project.** From **Project Settings → API** copy the URL, anon key and service_role key.
-   From **Database → Connection string** copy the **transaction pooler** URL (port 6543) for `DATABASE_URL`
-   and the **direct** URL (port 5432) for `DIRECT_URL`.
-2. **Run migrations and seed from your machine** against the new project:
+1. **Create a Supabase project** (it is only the Postgres database). From **Database → Connection string**
+   copy the **session pooler** URL (port 5432) for `DATABASE_URL` (not the transaction pooler on 6543, which
+   loses pipelined queries) and the **direct** URL for `DIRECT_URL`.
+2. **Run the migrations from your machine** against the new project:
 
    ```sh
    DIRECT_URL='postgresql://…:5432/postgres' DATABASE_URL="$DIRECT_URL" pnpm db:migrate
-   DATABASE_URL="$DIRECT_URL" \
-     pnpm db:seed -- --admin-email owner@yourshop.lk --admin-password '…'
    ```
 
 3. **Schedule the nightly stock check.** Enable the `pg_cron` extension (Database → Extensions), then run
    [`supabase/cron.sql`](supabase/cron.sql) in the SQL editor. It runs `reconcile_stock()` at 02:00 Colombo time;
    mismatches appear on the admin dashboard.
-4. **Logo storage.** The `branding` bucket is created automatically the first time an admin uploads a logo
-   under **Settings**. To create it by hand: Storage → New bucket → `branding`, public.
-5. **Deploy to Vercel.** Import the repo and set these environment variables (Production and Preview):
-   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
-   `DATABASE_URL` (pooler URL), `DIRECT_URL`, and `BETTER_AUTH_SECRET` (`openssl rand -hex 32`, the same value
-   for Production and Preview as they share the database).
+4. **Deploy to Vercel.** Import the repo and set these environment variables (Production and Preview):
+   `DATABASE_URL` (session pooler URL), `DIRECT_URL`, `BETTER_AUTH_SECRET` (`openssl rand -hex 32`, the same
+   value for Production and Preview as they share the database), and for this first start only `SETUP_KEY`
+   (24+ random characters, `openssl rand -hex 16`).
+5. **Set up the company.** Open the site: it goes to `/setup`. Type the setup key, the business name and the
+   owner's login. The owner is signed in, and `/setup` closes for good. Then remove `SETUP_KEY` from Vercel,
+   and fill in address, phone, TIN, VAT and logo under **Settings**.
+   (`pnpm db:seed` is for local development and tests only.)
    Optional features are off until you set their variable to `1` and redeploy. Turn one on only when the owner
    asks for it: `FEATURE_SALES_TARGET` adds the daily sales target (dashboard card, Settings section, daily
    report PDF). Turning it off again only hides it; saved targets are kept.
@@ -94,7 +93,7 @@ fields on ird.gov.lk / documents.gov.lk** and adjust `src/components/print/invoi
   service (`src/server/services`). Each service runs one database transaction that locks the affected parts rows.
 - Stock lives in two places kept in step: the append-only `stock_movements` ledger and the cached
   `parts.qty_on_hand`. `reconcile_stock()` compares them nightly.
-- Supabase provides Postgres (and Storage for the logo). Logins and sessions are Better Auth tables in the same
+- Supabase provides Postgres only. Logins and sessions are Better Auth tables in the same
   Postgres (`src/server/better-auth.ts`, `src/server/auth-admin.ts`). Data access goes through Drizzle on the
   server; row-level security is on for every table with no policies, so the browser can't read data directly.
 - Money is `numeric(12,2)` and all arithmetic uses decimal.js (`src/lib/money.ts`), rounding half-up.

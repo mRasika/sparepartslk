@@ -2,6 +2,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { InvoicePdf } from "@/components/print/invoice-pdf";
 import { getSessionUser } from "@/server/auth";
 import { NotFound } from "@/server/errors";
+import { logoForPdf } from "@/server/services/logo";
 import { getInvoicePrintData } from "@/server/services/print";
 
 export const runtime = "nodejs";
@@ -13,7 +14,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   try {
     const data = await getInvoicePrintData(user, id);
-    const pdf = await renderToBuffer(<InvoicePdf data={data} />);
+    const logo = await logoForPdf(data.business.logoUrl);
+    const pdf = await renderToBuffer(<InvoicePdf data={data} logo={logo} />);
     return new Response(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",

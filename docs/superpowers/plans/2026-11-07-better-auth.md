@@ -23,7 +23,7 @@
   - `"This account is turned off. Ask the owner to turn it back on."`
   - `"Too many tries. Wait a while and try again."`
 - Emails are normalised with `normaliseEmail` from `src/lib/reset-code.ts` (trim + lowercase) everywhere a login is looked up or created.
-- Migration `0012_better_auth` only **adds** tables and indexes. No FK on `profiles` and nothing dropped (the old production code must keep working against it). `0013` is Task 8, in a later PR.
+- Migration `0012_better_auth` only **adds** tables and indexes. No FK on `profiles` and nothing dropped (the old production code must keep working against it). `0014` is Task 8 (renumbered: `0013` became the logo table), in a later PR.
 - Ids are uuids. Better Auth uses `advanced.database.generateId: "uuid"`.
 
 ## Review Focus
@@ -391,7 +391,7 @@ git add -A && git commit -m "feat(auth): middleware on Better Auth; drop Supabas
   - "tell staff they'll sign in once with the same password";
   - the "don't create logins on Preview before the release" rule;
   - the rollback command (`npx vercel@65.3.1 rollback <previous prod deployment>`);
-  - "apply 0013 only after rollback is no longer wanted".
+  - "apply 0014 only after rollback is no longer wanted".
 
 - [ ] **Step 4: Commit**
 
@@ -405,7 +405,7 @@ git add -A && git commit -m "chore(ops): copy existing logins into Better Auth; 
 
 **Files:**
 - Modify: `src/server/db/schema/reference.ts` (`profiles.userId` `.references(() => user.id)`; remove `signedOutAt`)
-- Create: `drizzle/0013_better_auth_cleanup.sql` (generated)
+- Create: `drizzle/0014_better_auth_cleanup.sql` (generated)
 
 - [ ] **Step 1:** Make the schema change, then run `pnpm db:generate --name better_auth_cleanup`.
 Expected: the SQL only adds the `profiles_user_id_user_id_fk` FK and drops `signed_out_at`.

@@ -48,7 +48,7 @@ in through the Supabase MCP, with a hand-written drizzle tracking row, **before*
 6. **Release to Production.** Every device is signed out once (old Supabase cookies are ignored) and
    people sign in with their same password. Check: sign in, open a few pages, sign out.
 
-7. **After a day or two of normal use**, apply `0013_better_auth_cleanup` the same way as step 1
+7. **After a day or two of normal use**, apply `0014_better_auth_cleanup` (renumbered: `0013` is the logo table) the same way as step 1
    (Task 8 of the plan). Before that, check
    `select count(*) from profiles p left join "user" u on u.id = p.user_id where u.id is null` → 0.
 
@@ -59,5 +59,5 @@ npx vercel@65.3.1 rollback <previous production deployment url>
 ```
 
 Supabase Auth was never changed, so the old code works at once. Only a password changed under Better
-Auth goes back to its old value. **Don't apply 0013 while rollback may still be wanted**: the old
-code reads `profiles.signed_out_at`, which 0013 drops.
+Auth goes back to its old value. **Don't apply 0014 while rollback may still be wanted**: the old
+code reads `profiles.signed_out_at`, which 0014 drops.

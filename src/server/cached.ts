@@ -1,6 +1,7 @@
 import { revalidateTag, unstable_cache } from "next/cache";
 import { listBrands, listCategories, listPriceTiers, listVehicleModels } from "@/server/services/catalog";
-import { getSettings } from "@/server/services/settings";
+import { displayName } from "@/lib/business-name";
+import { findSettings, getSettings } from "@/server/services/settings";
 
 /**
  * Reference lists that change a few times a month but are read on most pages. Served from Next's
@@ -40,6 +41,15 @@ const SETTINGS = "settings";
  * Its `updatedAt` comes back as a string, so don't use it from here.
  */
 export const cachedSettings = unstable_cache(() => getSettings(), ["settings"], {
+  tags: [SETTINGS],
+  revalidate: REVALIDATE_SECONDS,
+});
+
+/**
+ * This company's name for titles, the sidebar and the sign-in page. Works on a database with no
+ * settings row yet (before setup), when it gives the product's name.
+ */
+export const cachedBusinessName = unstable_cache(async () => displayName((await findSettings())?.businessName), ["business-name"], {
   tags: [SETTINGS],
   revalidate: REVALIDATE_SECONDS,
 });
