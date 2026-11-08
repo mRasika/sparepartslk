@@ -1,7 +1,6 @@
 "use client";
 
 import { Pencil, Plus } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -42,7 +41,6 @@ export function ReferenceEditor({
   display: (row: Record<string, Value>) => string;
   save: (values: Record<string, string>) => Promise<ActionResult<{ id: string }>>;
 }) {
-  const router = useRouter();
   const [editing, setEditing] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -71,7 +69,6 @@ export function ReferenceEditor({
       }
       toast.success(`${noun} saved`);
       setEditing(null);
-      router.refresh();
     });
   }
 

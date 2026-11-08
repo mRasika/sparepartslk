@@ -59,7 +59,6 @@ export function UsersTable({ users, currentUserId }: { users: User[]; currentUse
         return;
       }
       toast.success(done);
-      router.refresh();
     });
   }
 
@@ -160,11 +159,13 @@ export function UsersTable({ users, currentUserId }: { users: User[]; currentUse
           </TableBody>
         </Table>
       </div>
-      <AddUserDialog open={adding} onOpenChange={setAdding} onCreated={() => router.refresh()} />
+      <AddUserDialog open={adding} onOpenChange={setAdding} />
       <SetPasswordDialog
         user={settingPassword}
         self={settingPassword?.id === currentUserId}
         onClose={() => setSettingPassword(null)}
+        // setUserPasswordAction revalidates nothing; the refresh sends an admin who changed their own
+        // password to sign-in. Never pair router.refresh() with an action that calls revalidatePath.
         onDone={() => router.refresh()}
       />
     </>
@@ -174,11 +175,9 @@ export function UsersTable({ users, currentUserId }: { users: User[]; currentUse
 function AddUserDialog({
   open,
   onOpenChange,
-  onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  onCreated: () => void;
 }) {
   const empty = { fullName: "", email: "", role: "staff" as "staff" | "admin", password: "", canGetEmails: false };
   const [values, setValues] = useState(empty);
@@ -197,7 +196,6 @@ function AddUserDialog({
       toast.success(`${values.fullName} can now sign in`);
       setValues(empty);
       onOpenChange(false);
-      onCreated();
     });
   }
 

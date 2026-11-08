@@ -1,13 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { resolveReconciliationIssueAction } from "@/server/actions/dashboard";
 
 export function ResolveIssueButton({ issueId, sku }: { issueId: string; sku: string }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   return (
     <Button
@@ -22,7 +20,6 @@ export function ResolveIssueButton({ issueId, sku }: { issueId: string; sku: str
             return;
           }
           toast.success(`${sku} marked as fixed`);
-          router.refresh();
         })
       }
     >

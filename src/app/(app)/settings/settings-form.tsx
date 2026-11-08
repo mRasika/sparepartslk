@@ -1,7 +1,6 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element -- previewing an uploaded logo URL */
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -27,7 +26,6 @@ type Values = {
 };
 
 export function SettingsForm({ initial }: { initial: Values }) {
-  const router = useRouter();
   const [v, setV] = useState(initial);
   const [error, setError] = useState<ActionError | null>(null);
   const [pending, startTransition] = useTransition();
@@ -60,7 +58,6 @@ export function SettingsForm({ initial }: { initial: Values }) {
         return;
       }
       toast.success("Settings saved");
-      router.refresh();
     });
   }
 
