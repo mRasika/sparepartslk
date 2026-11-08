@@ -1,7 +1,6 @@
 "use client";
 
 import { AlertTriangle, Plus } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -93,7 +92,6 @@ function RuleFields({
 }
 
 function TierRow({ tier, defaultName }: { tier: TierStatsRow; defaultName: string }) {
-  const router = useRouter();
   const [draft, setDraft] = useState(() => toDraft(tier));
   const [pending, startTransition] = useTransition();
   const initial = toDraft(tier);
@@ -107,7 +105,6 @@ function TierRow({ tier, defaultName }: { tier: TierStatsRow; defaultName: strin
         return;
       }
       toast.success(`${draft.name} saved`);
-      router.refresh();
     });
   }
 
@@ -154,7 +151,6 @@ function TierRow({ tier, defaultName }: { tier: TierStatsRow; defaultName: strin
 }
 
 function NewTier({ defaultName }: { defaultName: string }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>({ name: "", discountPct: "0", roundTo: "0" });
   const [pending, startTransition] = useTransition();
@@ -180,7 +176,6 @@ function NewTier({ defaultName }: { defaultName: string }) {
       toast.success(`${draft.name} added`);
       setOpen(false);
       setDraft({ name: "", discountPct: "0", roundTo: "0" });
-      router.refresh();
     });
   }
 

@@ -32,6 +32,8 @@ export function DraftList({ drafts }: { drafts: InvoiceDraftRow[] }) {
         });
         return;
       }
+      // The discard action revalidates nothing, so this refresh is the only update. Never pair
+      // router.refresh() with an action that calls revalidatePath: the two race and can freeze the page.
       router.refresh();
     });
   }

@@ -1,7 +1,6 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -26,7 +25,6 @@ export function BulkPriceForm({
   categories: Option[];
   brands: Option[];
 }) {
-  const router = useRouter();
   const [tierId, setTierId] = useState(tiers.find((t) => t.isDefault)?.id ?? "");
   const [categoryId, setCategoryId] = useState("");
   const [brandId, setBrandId] = useState("");
@@ -63,7 +61,6 @@ export function BulkPriceForm({
       toast.success(`${result.data.updated} prices updated`);
       setPreview(null);
       setChangePct("");
-      router.refresh();
     });
   }
 
