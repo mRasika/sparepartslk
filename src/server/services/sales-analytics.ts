@@ -191,22 +191,30 @@ export async function getTopSellers(
   }));
 }
 
-export type SalesAnalytics = { current: SalesTotals; previous: SalesTotals; trend: TrendPoint[]; top: TopSellerRow[] };
+export type SalesSummary = { current: SalesTotals; previous: SalesTotals; trend: TrendPoint[] };
 
-/** Everything the dashboard's sales & profit section shows (spec §2). Admins only: it reveals cost. */
-export async function getSalesAnalytics(
-  user: SessionUser,
-  period: Period,
-  top: { dimension: TopDimension; sort: TopSort },
-): Promise<SalesAnalytics> {
+/** The period's totals, the comparison totals and the trend (admin only). */
+export async function getSalesSummary(user: SessionUser, period: Period): Promise<SalesSummary> {
   requireRole(user, "admin");
-  const [current, previous, trend, topRows] = await Promise.all([
+  const [current, previous, trend] = await Promise.all([
     getSalesTotals(period.range),
     getSalesTotals(period.compare),
     getSalesTrend(period.range, period.bucket),
-    getTopSellers(period.range, top.dimension, top.sort),
   ]);
-  return { current, previous, trend, top: topRows };
+  return { current, previous, trend };
+}
+
+/**
+ * The top-sellers table on its own (admin only), so switching its tab or sort reloads just the
+ * table and not the whole Sales & profit section.
+ */
+export async function getTopSellerTable(
+  user: SessionUser,
+  range: DateRange,
+  top: { dimension: TopDimension; sort: TopSort },
+): Promise<TopSellerRow[]> {
+  requireRole(user, "admin");
+  return getTopSellers(range, top.dimension, top.sort);
 }
 
 /** Net sales per part over a range (same lines as the totals: discount shared, returns off). */

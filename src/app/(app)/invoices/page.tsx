@@ -1,6 +1,9 @@
 import { FilePen, Plus } from "lucide-react";
+import Form from "next/form";
 import Link from "next/link";
+import { Suspense } from "react";
 import { PageHeader } from "@/components/page-header";
+import { TableSkeleton } from "@/components/table-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,20 +26,9 @@ type SearchParams = Promise<{ q?: string; status?: string; from?: string; to?: s
 export default async function InvoicesPage({ searchParams }: { searchParams: SearchParams }) {
   await requireUser();
   const { q = "", status = "", from = "", to = "", unpaid = "" } = await searchParams;
-  const [rows, draftCount] = await Promise.all([
-    listInvoices({
-      q,
-      status: status === "issued" || status === "cancelled" ? status : undefined,
-      from: from || undefined,
-      to: to || undefined,
-      outstandingOnly: unpaid === "1",
-    }),
-    countInvoiceDrafts(),
-  ]);
+  const filterKey = JSON.stringify({ q, status, from, to, unpaid });
+  const draftCount = await countInvoiceDrafts();
   const filtered = Boolean(q || status || from || to || unpaid);
-
-  const totalColumn = moneyColumn(rows.map((r) => r.total));
-  const owedColumn = moneyColumn(rows.map((r) => r.outstanding));
   return (
     <div>
       <PageHeader
@@ -54,7 +46,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Sea
           </>
         }
       />
-      <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
+      <Form key={`form:${filterKey}`} action="/invoices" scroll={false} className="mb-4 flex flex-wrap items-end gap-2" role="search">
         <Input name="q" defaultValue={q} placeholder="Invoice no or customer" aria-label="Search invoices" className="w-full sm:w-64" />
         <NativeSelect name="status" defaultValue={status} aria-label="Status">
           <NativeSelectOption value="">All</NativeSelectOption>
@@ -71,57 +63,90 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Sea
           Search
         </Button>
         {filtered && (
-          <Link href="/invoices" className={buttonVariants({ variant: "ghost" })}>
+          <Link href="/invoices" scroll={false} className={buttonVariants({ variant: "ghost" })}>
             Clear
           </Link>
         )}
-      </form>
-      <div className="rounded-lg border bg-card">
-        <Table>
-          <TableHeader>
+      </Form>
+      {/* Only the table reloads on a search; the header and the form stay on screen. */}
+      <Suspense key={filterKey} fallback={<TableSkeleton label="Loading invoices" />}>
+        <InvoicesTable q={q} status={status} from={from} to={to} unpaid={unpaid} filtered={filtered} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function InvoicesTable({
+  q,
+  status,
+  from,
+  to,
+  unpaid,
+  filtered,
+}: {
+  q: string;
+  status: string;
+  from: string;
+  to: string;
+  unpaid: string;
+  filtered: boolean;
+}) {
+  const rows = await listInvoices({
+    q,
+    status: status === "issued" || status === "cancelled" ? status : undefined,
+    from: from || undefined,
+    to: to || undefined,
+    outstandingOnly: unpaid === "1",
+  });
+
+  const totalColumn = moneyColumn(rows.map((r) => r.total));
+  const owedColumn = moneyColumn(rows.map((r) => r.outstanding));
+  return (
+    <div className="rounded-lg border bg-card">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Invoice</TableHead>
+            <TableHead>Date</TableHead>
+            <TableHead>Customer</TableHead>
+            <TableHead className="hidden sm:table-cell">Type</TableHead>
+            <TableHead className="text-right">Total (Rs)</TableHead>
+            <TableHead className="hidden text-right md:table-cell">Owed</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.length === 0 && (
             <TableRow>
-              <TableHead>Invoice</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead className="hidden sm:table-cell">Type</TableHead>
-              <TableHead className="text-right">Total (Rs)</TableHead>
-              <TableHead className="hidden text-right md:table-cell">Owed</TableHead>
+              <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                {filtered ? "No invoices match." : "No invoices yet. Create one with New invoice."}
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                  {filtered ? "No invoices match." : "No invoices yet. Create one with New invoice."}
-                </TableCell>
-              </TableRow>
-            )}
-            {rows.map((r) => (
-              <TableRow key={r.id} className={r.status === "cancelled" ? "text-muted-foreground" : ""}>
-                <TableCell className="font-medium">
-                  <Link href={`/invoices/${r.id}`} className="hover:underline">
-                    {r.number}
-                  </Link>
-                  {r.status === "cancelled" && (
-                    <Badge variant="outline" className="ml-2">
-                      Cancelled
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell className="whitespace-nowrap">{formatDate(r.invoiceDate)}</TableCell>
-                <TableCell>{r.customerName}</TableCell>
-                <TableCell className="hidden capitalize sm:table-cell">{r.paymentType}</TableCell>
-                <TableCell className={`text-right tabular-nums ${r.status === "cancelled" ? "line-through" : ""}`}>
-                  {totalColumn(r.total)}
-                </TableCell>
-                <TableCell className="hidden text-right tabular-nums md:table-cell">
-                  {r.outstanding === "0.00" ? <span className="text-muted-foreground">–</span> : owedColumn(r.outstanding)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+          )}
+          {rows.map((r) => (
+            <TableRow key={r.id} className={r.status === "cancelled" ? "text-muted-foreground" : ""}>
+              <TableCell className="font-medium">
+                <Link href={`/invoices/${r.id}`} className="hover:underline">
+                  {r.number}
+                </Link>
+                {r.status === "cancelled" && (
+                  <Badge variant="outline" className="ml-2">
+                    Cancelled
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell className="whitespace-nowrap">{formatDate(r.invoiceDate)}</TableCell>
+              <TableCell>{r.customerName}</TableCell>
+              <TableCell className="hidden capitalize sm:table-cell">{r.paymentType}</TableCell>
+              <TableCell className={`text-right tabular-nums ${r.status === "cancelled" ? "line-through" : ""}`}>
+                {totalColumn(r.total)}
+              </TableCell>
+              <TableCell className="hidden text-right tabular-nums md:table-cell">
+                {r.outstanding === "0.00" ? <span className="text-muted-foreground">–</span> : owedColumn(r.outstanding)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -1,7 +1,10 @@
 import { Percent, Plus, SlidersHorizontal } from "lucide-react";
+import Form from "next/form";
 import Link from "next/link";
+import { Suspense } from "react";
 import { StockLevel } from "@/components/stock-level";
 import { PageHeader } from "@/components/page-header";
+import { TableSkeleton } from "@/components/table-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,17 +26,8 @@ type SearchParams = Promise<{ q?: string; category?: string; brand?: string; veh
 export default async function PartsPage({ searchParams }: { searchParams: SearchParams }) {
   const user = await requireUser();
   const { q = "", category = "", brand = "", vehicle = "" } = await searchParams;
-  const [rows, categories, brands, vehicles] = await Promise.all([
-    searchParts(q, {
-      categoryId: category || undefined,
-      brandId: brand || undefined,
-      vehicleModelId: vehicle || undefined,
-      limit: 200,
-    }),
-    cachedCategories(),
-    cachedBrands(),
-    cachedVehicleModels(),
-  ]);
+  const filterKey = JSON.stringify({ q, category, brand, vehicle });
+  const [categories, brands, vehicles] = await Promise.all([cachedCategories(), cachedBrands(), cachedVehicleModels()]);
   const filtered = Boolean(q || category || brand || vehicle);
 
   return (
@@ -58,7 +52,7 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
         }
       />
 
-      <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
+      <Form key={`form:${filterKey}`} action="/parts" scroll={false} className="mb-4 flex flex-wrap items-end gap-2" role="search">
         <Input
           name="q"
           defaultValue={q}
@@ -95,12 +89,43 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
           Search
         </Button>
         {filtered && (
-          <Link href="/parts" className={buttonVariants({ variant: "ghost" })}>
+          <Link href="/parts" scroll={false} className={buttonVariants({ variant: "ghost" })}>
             Clear
           </Link>
         )}
-      </form>
+      </Form>
 
+      {/* Only the table reloads on a search; the header and the form stay on screen. */}
+      <Suspense key={filterKey} fallback={<TableSkeleton label="Loading parts" />}>
+        <PartsTable q={q} category={category} brand={brand} vehicle={vehicle} filtered={filtered} isAdmin={user.role === "admin"} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function PartsTable({
+  q,
+  category,
+  brand,
+  vehicle,
+  filtered,
+  isAdmin,
+}: {
+  q: string;
+  category: string;
+  brand: string;
+  vehicle: string;
+  filtered: boolean;
+  isAdmin: boolean;
+}) {
+  const rows = await searchParts(q, {
+    categoryId: category || undefined,
+    brandId: brand || undefined,
+    vehicleModelId: vehicle || undefined,
+    limit: 200,
+  });
+  return (
+    <>
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>
@@ -119,7 +144,7 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
                 <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                   {filtered
                     ? "No parts match. Try fewer words or another filter."
-                    : user.role === "admin"
+                    : isAdmin
                       ? "No parts yet. Add the first one with New part."
                       : "No parts yet."}
                 </TableCell>
@@ -159,6 +184,6 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
       {rows.length === 200 && (
         <p className="mt-2 text-sm text-muted-foreground">Showing the first 200. Narrow the search to see more.</p>
       )}
-    </div>
+    </>
   );
 }

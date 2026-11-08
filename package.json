@@ -1,6 +1,7 @@
 {
   "name": "sparepartslk",
   "version": "0.1.0",
+  "packageManager": "pnpm@9.15.9",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -55,5 +56,10 @@
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.5"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "next@15.5.28": "patches/next@15.5.28.patch"
+    }
   }
 }

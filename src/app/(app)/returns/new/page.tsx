@@ -1,4 +1,6 @@
+import Form from "next/form";
 import Link from "next/link";
+import { Suspense } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,29 +17,20 @@ export default async function NewReturnPage({ searchParams }: { searchParams: Se
   const { invoiceId, q = "" } = await searchParams;
 
   if (!invoiceId) {
-    const matches = q ? await listInvoices({ q, status: "issued", limit: 20 }) : [];
     return (
       <div className="max-w-3xl">
         <PageHeader title="Return items" description="Returns are made against the original invoice." />
-        <form className="mb-4 flex gap-2" role="search">
+        <Form key={`form:${q}`} action="/returns/new" scroll={false} className="mb-4 flex gap-2" role="search">
           <Input name="q" defaultValue={q} placeholder="Invoice no or customer" aria-label="Find the invoice" autoFocus className="w-full sm:w-72" />
           <Button type="submit" variant="secondary">
             Find invoice
           </Button>
-        </form>
-        {q && matches.length === 0 && <p className="text-sm text-muted-foreground">No issued invoice matches.</p>}
-        <ul className="divide-y rounded-lg border bg-card empty:hidden">
-          {matches.map((m) => (
-            <li key={m.id}>
-              <Link href={`/returns/new?invoiceId=${m.id}`} className="flex justify-between px-4 py-3 text-sm hover:bg-muted">
-                <span className="font-medium">{m.number}</span>
-                <span>
-                  {m.customerName}, {formatDate(m.invoiceDate)}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        </Form>
+        {q && (
+          <Suspense key={q} fallback={<div role="status" aria-label="Finding invoices" className="h-32 animate-pulse rounded-lg border bg-card" />}>
+            <InvoiceMatches q={q} />
+          </Suspense>
+        )}
       </div>
     );
   }
@@ -68,5 +61,24 @@ export default async function NewReturnPage({ searchParams }: { searchParams: Se
         invoiceTotal={invoice.total}
       />
     </div>
+  );
+}
+
+async function InvoiceMatches({ q }: { q: string }) {
+  const matches = await listInvoices({ q, status: "issued", limit: 20 });
+  if (matches.length === 0) return <p className="text-sm text-muted-foreground">No issued invoice matches.</p>;
+  return (
+    <ul className="divide-y rounded-lg border bg-card">
+      {matches.map((m) => (
+        <li key={m.id}>
+          <Link href={`/returns/new?invoiceId=${m.id}`} className="flex justify-between px-4 py-3 text-sm hover:bg-muted">
+            <span className="font-medium">{m.number}</span>
+            <span>
+              {m.customerName}, {formatDate(m.invoiceDate)}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
