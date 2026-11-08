@@ -50,9 +50,9 @@ Customers — garages, fleet owners, people phoning in — ask "how much for the
 ## 3. Converting to an invoice
 
 1. **Convert to invoice** (on the quotation page, for Open and Expired) opens `/invoices/new?quotation=<id>`. The editor is pre-filled with the quotation's customer, payment type, lines and discounts, and shows "From quotation QUO-…".
-2. Staff can remove lines, change quantities, add parts or switch the customer, then issue as usual. All existing checks run.
+2. Staff can remove lines, change quantities or add parts, then issue as usual. All existing checks run. The customer is fixed: the quoted prices were set for that customer's tier, so `createInvoice` and `previewInvoice` refuse a different customer (`InvalidState("QUO-… is for another customer")`) and the editor shows the customer read-only. To bill someone else, edit the quotation's customer first (that re-prices it for the new customer's tier). *(Changed 2026-11-08, SEC-001: switching the customer used to keep the quoted prices, so a Wholesale quote could be billed to the walk-in customer at Wholesale prices.)*
 3. **Prices**
-   - Quotation still valid (`valid_until >= today`): every part that is on the quotation uses its quoted unit price, whatever the qty and even if the customer was switched.
+   - Quotation still valid (`valid_until >= today`): every part that is on the quotation uses its quoted unit price, whatever the qty.
    - Parts added during conversion: today's price for the invoice's customer.
    - Quotation expired: today's prices for every line. The editor shows a notice listing each line whose price changed (old → new).
    - If the same part appears on two quotation lines, they share one unit price (one tier at save time), so a part → price map is enough.
@@ -121,7 +121,7 @@ Customers — garages, fleet owners, people phoning in — ask "how much for the
 - Walk-in: quote-for name/phone saved; credit refused.
 - Edit allowed when open or expired (re-prices); refused when converted or cancelled.
 - Cancel: reason required; cancelled can't be edited or converted.
-- Convert while valid: invoice uses quoted prices when today's price differs; changed qty keeps the quoted price; switched customer keeps quoted prices; an added part gets today's price.
+- Convert while valid: invoice uses quoted prices when today's price differs; changed qty keeps the quoted price; another customer is refused and the quotation stays open; an added part gets today's price.
 - Convert after expiry: today's prices on every line.
 - Convert twice: second refused, naming the first invoice. Failed conversion (insufficient stock) leaves the quotation open.
 - Cancelling the invoice reopens the quotation; it can be converted again.

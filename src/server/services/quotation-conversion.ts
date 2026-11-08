@@ -12,6 +12,8 @@ import { getQuotationForEditor } from "@/server/services/quotations";
 export type QuotationPrices = {
   id: string;
   number: string;
+  /** Its prices were set for this customer's tier, so only this customer can be invoiced. */
+  customerId: string;
   status: "open" | "converted" | "cancelled";
   invoiceNumber: string | null;
   expired: boolean;
@@ -42,6 +44,7 @@ export async function loadQuotationPrices(
   return {
     id: q.id,
     number: q.number,
+    customerId: q.customerId,
     status: q.status,
     invoiceNumber: invoice?.number ?? null,
     expired: q.validUntil < colomboDate(),

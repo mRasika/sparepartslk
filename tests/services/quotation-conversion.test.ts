@@ -138,25 +138,38 @@ describe("converting a quotation", () => {
     expect(rows.map((r) => r.lineTotal)).toEqual(["1000.00", "900.00"]);
   });
 
-  it("a switched customer keeps quoted prices", async () => {
-    const x = await makeCustomer({ creditLimit: "100000.00" });
+  // SEC-001: a quotation's prices were set for its own customer's tier, so it can't be issued to
+  // anyone else (a Wholesale quote billed to the walk-in customer would get Wholesale prices).
+  it("refuses converting a quotation for another customer and leaves it open", async () => {
+    const wholesale = await makeCustomer({ tier: "Wholesale" });
     const w = await walkIn();
     const a = await makePart({ qty: 10 });
-    const q = await quote(x.id, [{ partId: a.id, qty: 1 }]);
-    await setRetailPrice(a.id, "1200.00");
+    const q = await quote(wholesale.id, [{ partId: a.id, qty: 1 }]);
 
-    await expect(
-      createInvoice(staff, { customerId: w.id, paymentType: "credit", lines: [{ partId: a.id, qty: 1 }], quotationId: q.id }),
-    ).rejects.toBeInstanceOf(InvalidState);
-
-    const inv = await createInvoice(staff, {
+    const attempt = createInvoice(staff, {
       customerId: w.id,
       paymentType: "cash",
       lines: [{ partId: a.id, qty: 1 }],
       quotationId: q.id,
     });
-    const [item] = await items(inv.id);
-    expect(item.unitPrice).toBe("1000.00");
+    await expect(attempt).rejects.toBeInstanceOf(InvalidState);
+    await expect(attempt).rejects.toThrow(`${q.number} is for another customer`);
+
+    expect(await db.$count(invoices)).toBe(0);
+    const after = await getQuotation(q.id);
+    expect(after.status).toBe("open");
+    expect(after.invoice).toBeNull();
+  });
+
+  it("refuses previewing a quotation for another customer", async () => {
+    const wholesale = await makeCustomer({ tier: "Wholesale" });
+    const w = await walkIn();
+    const a = await makePart({ qty: 10 });
+    const q = await quote(wholesale.id, [{ partId: a.id, qty: 1 }]);
+
+    await expect(
+      previewInvoice(staff, { customerId: w.id, paymentType: "cash", lines: [{ partId: a.id, qty: 1 }], quotationId: q.id }),
+    ).rejects.toThrow(`${q.number} is for another customer`);
   });
 
   it("converts on the last valid day at quoted prices", async () => {
@@ -350,6 +363,27 @@ describe("converting a quotation", () => {
     expect(draft?.quotation?.number).toBe(q.number);
     expect(draft?.lines[0].part.price).toBe("1000.00");
     expect(draft?.lines[1].part.price).toBe("1100.00");
+  });
+
+  it("a draft for another customer drops the quotation and shows that customer's prices", async () => {
+    const wholesale = await makeCustomer({ tier: "Wholesale" });
+    const w = await walkIn();
+    const a = await makePart({ qty: 10 });
+    const q = await quote(wholesale.id, [{ partId: a.id, qty: 1 }]);
+    const draftId = randomUUID();
+
+    // Saved by an editor from before SEC-001, where the customer could be switched.
+    await expect(
+      previewAndSaveDraft(
+        staff,
+        { customerId: w.id, paymentType: "cash", lines: [{ partId: a.id, qty: 1 }], quotationId: q.id },
+        draftId,
+      ),
+    ).rejects.toThrow(/is for another customer/);
+
+    const draft = await getInvoiceDraftForEditor(draftId);
+    expect(draft?.quotation).toBeUndefined();
+    expect(draft?.lines[0].part.price).toBe("1000.00");
   });
 
   it("a draft of a converted quotation can't issue a second invoice", async () => {
