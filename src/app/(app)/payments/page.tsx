@@ -56,6 +56,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Sea
             <Link
               key={t.key}
               href={t.href}
+              scroll={false}
               aria-current={active ? "page" : undefined}
               className={cn(
                 "rounded-md px-4 py-1.5 text-sm font-medium",
@@ -89,7 +90,7 @@ function BlockSkeleton({ label, className }: { label: string; className: string 
 function Received({ q }: { q: string }) {
   return (
     <>
-      <Form key={`form:${q}`} action="/payments" className="mb-4 flex gap-2" role="search">
+      <Form key={`form:${q}`} action="/payments" scroll={false} className="mb-4 flex gap-2" role="search">
         <Input name="q" defaultValue={q} placeholder="Payment no, customer or reference" aria-label="Search payments" className="w-full sm:w-72" />
         <Button type="submit" variant="secondary">
           Search
@@ -185,6 +186,7 @@ function Outstanding({
       <div className="mb-4 flex gap-2">
         <Link
           href={outstandingHref({ by })}
+          scroll={false}
           className={buttonVariants({ variant: overdueOnly || late ? "ghost" : "secondary" })}
           aria-current={!overdueOnly && !late ? "page" : undefined}
         >
@@ -192,6 +194,7 @@ function Outstanding({
         </Link>
         <Link
           href={outstandingHref({ by, overdue: true })}
+          scroll={false}
           className={buttonVariants({ variant: overdueOnly ? "secondary" : "ghost" })}
           aria-current={overdueOnly ? "page" : undefined}
         >
@@ -201,7 +204,7 @@ function Outstanding({
       {lateLabel && (
         <p className="mb-3 text-sm text-muted-foreground">
           Showing {lateLabel} ·{" "}
-          <Link href={outstandingHref({ by })} className="font-medium text-primary hover:underline">
+          <Link href={outstandingHref({ by })} scroll={false} className="font-medium text-primary hover:underline">
             Show all
           </Link>
         </p>

@@ -1,0 +1,28 @@
+diff --git a/dist/client/components/router-reducer/reducers/navigate-reducer.js b/dist/client/components/router-reducer/reducers/navigate-reducer.js
+index a4857f077f82ac32f1593c41cb005ab4e225175e..d9157c02d3984af297b2149f6fa2f2ff30dc546b 100644
+--- a/dist/client/components/router-reducer/reducers/navigate-reducer.js
++++ b/dist/client/components/router-reducer/reducers/navigate-reducer.js
+@@ -206,6 +206,9 @@ function navigateReducer(state, action) {
+             if (canonicalUrlOverride) {
+                 urlWithCanonicalPathname.pathname = canonicalUrlOverride.pathname;
+             }
++            // Sparepartslk patch: keep the Link's scroll={false} on aliased (search-params-only) navigations;
++            // handleAliasedPrefetchEntry never set it, so the page jumped to the top. Missing in next <= 15.5.29.
++            mutable.shouldScroll = shouldScroll;
+             const result = (0, _aliasedprefetchnavigations.handleAliasedPrefetchEntry)(navigatedAt, state, flightData, urlWithCanonicalPathname, mutable);
+             // We didn't return new router state because we didn't apply the aliased entry for some reason.
+             // We'll re-invoke the navigation handler but ensure that we don't attempt to use the aliased entry. This
+diff --git a/dist/esm/client/components/router-reducer/reducers/navigate-reducer.js b/dist/esm/client/components/router-reducer/reducers/navigate-reducer.js
+index 1cf5576491e626c501da8aab9d5a640cd3412170..67a50a19af08d5d60f00e35d750185c7b794a88c 100644
+--- a/dist/esm/client/components/router-reducer/reducers/navigate-reducer.js
++++ b/dist/esm/client/components/router-reducer/reducers/navigate-reducer.js
+@@ -180,6 +180,9 @@ export function navigateReducer(state, action) {
+             if (canonicalUrlOverride) {
+                 urlWithCanonicalPathname.pathname = canonicalUrlOverride.pathname;
+             }
++            // Sparepartslk patch: keep the Link's scroll={false} on aliased (search-params-only) navigations;
++            // handleAliasedPrefetchEntry never set it, so the page jumped to the top. Missing in next <= 15.5.29.
++            mutable.shouldScroll = shouldScroll;
+             const result = handleAliasedPrefetchEntry(navigatedAt, state, flightData, urlWithCanonicalPathname, mutable);
+             // We didn't return new router state because we didn't apply the aliased entry for some reason.
+             // We'll re-invoke the navigation handler but ensure that we don't attempt to use the aliased entry. This

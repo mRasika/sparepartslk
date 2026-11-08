@@ -46,7 +46,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Sea
           </>
         }
       />
-      <Form key={`form:${filterKey}`} action="/invoices" className="mb-4 flex flex-wrap items-end gap-2" role="search">
+      <Form key={`form:${filterKey}`} action="/invoices" scroll={false} className="mb-4 flex flex-wrap items-end gap-2" role="search">
         <Input name="q" defaultValue={q} placeholder="Invoice no or customer" aria-label="Search invoices" className="w-full sm:w-64" />
         <NativeSelect name="status" defaultValue={status} aria-label="Status">
           <NativeSelectOption value="">All</NativeSelectOption>
@@ -63,7 +63,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Sea
           Search
         </Button>
         {filtered && (
-          <Link href="/invoices" className={buttonVariants({ variant: "ghost" })}>
+          <Link href="/invoices" scroll={false} className={buttonVariants({ variant: "ghost" })}>
             Clear
           </Link>
         )}

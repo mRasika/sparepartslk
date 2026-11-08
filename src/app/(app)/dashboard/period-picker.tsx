@@ -1,6 +1,7 @@
 "use client";
 
 import { CalendarDays, CalendarRange, Check, ChevronDown } from "lucide-react";
+import Form from "next/form";
 import Link from "next/link";
 import { useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -119,7 +120,7 @@ function PeriodList({
         <RowText title="Choose dates" sub={custom.active ? `Shown now: ${custom.label}` : "From one day to another"} />
       </button>
       {showForm && (
-        <form action="/dashboard" method="get" className="grid grid-cols-2 gap-3 px-2.5 pt-1 pb-2">
+        <Form action="/dashboard" scroll={false} onSubmit={onPick} className="grid grid-cols-2 gap-3 px-2.5 pt-1 pb-2">
           {Object.entries(keep).map(([name, value]) => (
             <input key={name} type="hidden" name={name} value={value} />
           ))}
@@ -143,7 +144,7 @@ function PeriodList({
           <Button type="submit" className="col-span-2">
             Show these dates
           </Button>
-        </form>
+        </Form>
       )}
     </nav>
   );

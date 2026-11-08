@@ -33,7 +33,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           </Link>
         }
       />
-      <Form key={`form:${q}`} action="/customers" className="mb-4 flex gap-2" role="search">
+      <Form key={`form:${q}`} action="/customers" scroll={false} className="mb-4 flex gap-2" role="search">
         <Input name="q" defaultValue={q} placeholder="Name, business or phone" aria-label="Search customers" className="w-full sm:w-72" />
         <Button type="submit" variant="secondary">
           Search

@@ -43,7 +43,7 @@ export default async function QuotationsPage({ searchParams }: { searchParams: S
       />
       <Form
         key={`form:${filterKey}`}
-        action="/quotations"
+        action="/quotations" scroll={false}
         className="mb-4 flex flex-wrap items-end gap-2"
         role="search"
       >
@@ -66,7 +66,7 @@ export default async function QuotationsPage({ searchParams }: { searchParams: S
           Search
         </Button>
         {filtered && (
-          <Link href="/quotations" className={buttonVariants({ variant: "ghost" })}>
+          <Link href="/quotations" scroll={false} className={buttonVariants({ variant: "ghost" })}>
             Clear
           </Link>
         )}
