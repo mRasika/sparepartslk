@@ -62,8 +62,7 @@ export async function SalesSection({ user, params }: { user: SessionUser; params
   if (sort !== "sales") keep.sort = sort;
   const compareLabel = formatRange(period.compare, today);
   const periodParams: SalesParams = period.preset === "custom" ? { ...period.range } : { period: period.preset };
-  const preset = PERIOD_PRESETS.find((p) => p.value === period.preset);
-  const periodLabel = `${preset ? `${preset.label.toLowerCase()}, ` : ""}${formatRange(period.range, today)}`;
+  const periodLabel = formatRange(period.range, today);
 
   return (
     <SectionFrame
@@ -72,6 +71,7 @@ export async function SalesSection({ user, params }: { user: SessionUser; params
         <PeriodPicker
           presets={PERIOD_PRESETS.map((p) => ({
             label: p.label,
+            dates: formatRange(resolvePeriod({ period: p.value }, today).range, today),
             href: dashboardHref({ period: p.value, top, sort }),
             active: period.preset === p.value,
           }))}
@@ -111,11 +111,14 @@ function SectionFrame({
 }) {
   return (
     <section aria-labelledby="sales-heading" className="mt-2 border-t pt-6">
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h2 id="sales-heading" className="text-lg font-semibold tracking-tight">
-          Sales &amp; profit
-          {periodLabel && <span className="text-base font-normal text-muted-foreground"> · {periodLabel}</span>}
-        </h2>
+      {/* Title and period button share one row, on a phone too; the dates sit under the title. */}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 id="sales-heading" className="text-lg font-semibold tracking-tight">
+            Sales &amp; profit
+          </h2>
+          {periodLabel && <p className="text-sm text-muted-foreground">{periodLabel}</p>}
+        </div>
         {picker}
       </div>
       <div className="grid gap-4">{children}</div>
