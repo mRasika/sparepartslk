@@ -8,7 +8,7 @@ import { Forbidden } from "@/server/errors";
 import { cancelInvoice, createInvoice, type InvoiceInput } from "@/server/services/invoicing";
 import { createReturn } from "@/server/services/returns";
 import { resolvePeriod } from "@/lib/periods";
-import { getSalesAnalytics, getSalesTotals, getSalesTrend, getTopSellers } from "@/server/services/sales-analytics";
+import { getSalesSummary, getSalesTotals, getSalesTrend, getTopSellers, getTopSellerTable } from "@/server/services/sales-analytics";
 import { resetDb } from "../helpers/db";
 import { makeCustomer, makePart, makeUser } from "../helpers/factories";
 
@@ -211,7 +211,8 @@ describe("sales analytics: top sellers", () => {
 
   it("refuses staff", async () => {
     const staff = await makeUser("staff");
-    await expect(getSalesAnalytics(staff, resolvePeriod({}), { dimension: "parts", sort: "sales" })).rejects.toThrow(Forbidden);
+    await expect(getSalesSummary(staff, resolvePeriod({}))).rejects.toThrow(Forbidden);
+    await expect(getTopSellerTable(staff, resolvePeriod({}).range, { dimension: "parts", sort: "sales" })).rejects.toThrow(Forbidden);
   });
 
   it("returns current, previous, trend and top for admins", async () => {
@@ -220,11 +221,11 @@ describe("sales analytics: top sellers", () => {
     await sell({ lines: [{ partId: part.id, qty: 1 }] });
     await sell({ invoiceDate: period.compare.from, lines: [{ partId: part.id, qty: 1 }] });
 
-    const a = await getSalesAnalytics(admin, period, { dimension: "parts", sort: "sales" });
+    const a = await getSalesSummary(admin, period);
     expect(a.current.invoiceCount).toBe(1);
     expect(a.previous.invoiceCount).toBe(1);
     expect(a.trend[0].bucketStart).toBe(period.range.from);
     expect(a.trend.at(-1)?.bucketStart).toBe(today);
-    expect(a.top).toHaveLength(1);
+    expect(await getTopSellerTable(admin, period.range, { dimension: "parts", sort: "sales" })).toHaveLength(1);
   });
 });

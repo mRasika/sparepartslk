@@ -1,7 +1,10 @@
 import { Plus } from "lucide-react";
+import Form from "next/form";
 import Link from "next/link";
+import { Suspense } from "react";
 import { QuotationStatusBadge } from "@/components/billing/quotation-status-badge";
 import { PageHeader } from "@/components/page-header";
+import { TableSkeleton } from "@/components/table-skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -26,10 +29,8 @@ export default async function QuotationsPage({ searchParams }: { searchParams: S
   await requireUser();
   const { q = "", status = "" } = await searchParams;
   const statusFilter = STATUSES.find((s) => s === status);
-  const rows = await listQuotations({ q, status: statusFilter });
+  const filterKey = JSON.stringify({ q, status: statusFilter });
   const filtered = Boolean(q || statusFilter);
-
-  const totalColumn = moneyColumn(rows.map((r) => r.total));
   return (
     <div>
       <PageHeader
@@ -40,7 +41,12 @@ export default async function QuotationsPage({ searchParams }: { searchParams: S
           </Link>
         }
       />
-      <form className="mb-4 flex flex-wrap items-end gap-2" role="search">
+      <Form
+        key={`form:${filterKey}`}
+        action="/quotations"
+        className="mb-4 flex flex-wrap items-end gap-2"
+        role="search"
+      >
         <Input
           name="q"
           defaultValue={q}
@@ -64,54 +70,66 @@ export default async function QuotationsPage({ searchParams }: { searchParams: S
             Clear
           </Link>
         )}
-      </form>
-      <div className="rounded-lg border bg-card">
-        <Table>
-          <TableHeader>
+      </Form>
+      {/* Only the table reloads on a search; the header and the form stay on screen. */}
+      <Suspense key={filterKey} fallback={<TableSkeleton label="Loading quotations" />}>
+        <QuotationsTable q={q} status={statusFilter} filtered={filtered} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function QuotationsTable({ q, status, filtered }: { q: string; status: QuotationStatus | undefined; filtered: boolean }) {
+  const rows = await listQuotations({ q, status });
+
+  const totalColumn = moneyColumn(rows.map((r) => r.total));
+  return (
+    <div className="rounded-lg border bg-card">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Number</TableHead>
+            <TableHead>Date</TableHead>
+            <TableHead>Customer</TableHead>
+            <TableHead className="hidden sm:table-cell">Valid until</TableHead>
+            <TableHead className="text-right">Total (Rs)</TableHead>
+            <TableHead>Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.length === 0 && (
             <TableRow>
-              <TableHead>Number</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead className="hidden sm:table-cell">Valid until</TableHead>
-              <TableHead className="text-right">Total (Rs)</TableHead>
-              <TableHead>Status</TableHead>
+              <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                {filtered ? "No quotations match." : "No quotations yet."}
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                  {filtered ? "No quotations match." : "No quotations yet."}
-                </TableCell>
-              </TableRow>
-            )}
-            {rows.map((r) => (
-              <TableRow key={r.id} className={r.status === "cancelled" ? "text-muted-foreground" : ""}>
-                <TableCell className="font-medium">
-                  <Link href={`/quotations/${r.id}`} className="hover:underline">
-                    {r.number}
-                  </Link>
-                </TableCell>
-                <TableCell className="whitespace-nowrap">{formatDate(r.quotationDate)}</TableCell>
-                <TableCell>
-                  {r.isWalkIn && r.quoteForName ? (
-                    <>
-                      {r.quoteForName} <span className="text-muted-foreground">walk-in</span>
-                    </>
-                  ) : (
-                    r.customerName
-                  )}
-                </TableCell>
-                <TableCell className="hidden whitespace-nowrap sm:table-cell">{formatDate(r.validUntil)}</TableCell>
-                <TableCell className="text-right tabular-nums">{totalColumn(r.total)}</TableCell>
-                <TableCell>
-                  <QuotationStatusBadge status={r.status} invoiceNumber={r.invoiceNumber} />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+          )}
+          {rows.map((r) => (
+            <TableRow key={r.id} className={r.status === "cancelled" ? "text-muted-foreground" : ""}>
+              <TableCell className="font-medium">
+                <Link href={`/quotations/${r.id}`} className="hover:underline">
+                  {r.number}
+                </Link>
+              </TableCell>
+              <TableCell className="whitespace-nowrap">{formatDate(r.quotationDate)}</TableCell>
+              <TableCell>
+                {r.isWalkIn && r.quoteForName ? (
+                  <>
+                    {r.quoteForName} <span className="text-muted-foreground">walk-in</span>
+                  </>
+                ) : (
+                  r.customerName
+                )}
+              </TableCell>
+              <TableCell className="hidden whitespace-nowrap sm:table-cell">{formatDate(r.validUntil)}</TableCell>
+              <TableCell className="text-right tabular-nums">{totalColumn(r.total)}</TableCell>
+              <TableCell>
+                <QuotationStatusBadge status={r.status} invoiceNumber={r.invoiceNumber} />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

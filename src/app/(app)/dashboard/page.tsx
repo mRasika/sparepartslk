@@ -12,7 +12,7 @@ import { countInvoiceDrafts } from "@/server/services/invoice-drafts";
 import { salesTargetEnabled } from "@/server/features";
 import { NeedsAttention } from "./needs-attention";
 import { ResolveIssueButton } from "./resolve-issue-button";
-import { type SalesParams, SalesSection, SalesSectionSkeleton } from "./sales-section";
+import { type SalesParams, SalesSection } from "./sales-section";
 import { TargetSection, TargetSectionSkeleton } from "./target-section";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<SalesParams> }) {
@@ -99,12 +99,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </Suspense>
       )}
 
-      {user.role === "admin" && (
-        // Keyed by the query so changing the period re-suspends here, not the whole page.
-        <Suspense key={JSON.stringify(params)} fallback={<SalesSectionSkeleton />}>
-          <SalesSection user={user} params={params} />
-        </Suspense>
-      )}
+      {/* Has its own loading boundaries inside, keyed so only the part that changed reloads. */}
+      {user.role === "admin" && <SalesSection user={user} params={params} />}
     </div>
   );
 }
