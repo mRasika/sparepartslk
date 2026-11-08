@@ -44,14 +44,14 @@ export default async function ReturnsPage({ searchParams }: { searchParams: Sear
       />
       {/* next/form searches inside the app (no full reload). Keyed so Clear empties the boxes; the key
           differs from the list's below, as siblings sharing a key get duplicated by React. */}
-      <Form key={`form:${from}|${to}`} action="/returns" className="mb-4 flex flex-wrap items-end gap-2" role="search">
+      <Form key={`form:${from}|${to}`} action="/returns" scroll={false} className="mb-4 flex flex-wrap items-end gap-2" role="search">
         <Input type="date" name="from" defaultValue={from} aria-label="From date" className="w-auto" />
         <Input type="date" name="to" defaultValue={to} aria-label="To date" className="w-auto" />
         <Button type="submit" variant="secondary">
           Show
         </Button>
         {(from || to) && (
-          <Link href="/returns" className={buttonVariants({ variant: "ghost" })}>
+          <Link href="/returns" scroll={false} className={buttonVariants({ variant: "ghost" })}>
             Clear
           </Link>
         )}

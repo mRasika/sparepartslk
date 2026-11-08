@@ -55,5 +55,10 @@
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.5"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "next@15.5.28": "patches/next@15.5.28.patch"
+    }
   }
 }

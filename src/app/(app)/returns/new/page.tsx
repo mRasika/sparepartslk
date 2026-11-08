@@ -20,7 +20,7 @@ export default async function NewReturnPage({ searchParams }: { searchParams: Se
     return (
       <div className="max-w-3xl">
         <PageHeader title="Return items" description="Returns are made against the original invoice." />
-        <Form key={`form:${q}`} action="/returns/new" className="mb-4 flex gap-2" role="search">
+        <Form key={`form:${q}`} action="/returns/new" scroll={false} className="mb-4 flex gap-2" role="search">
           <Input name="q" defaultValue={q} placeholder="Invoice no or customer" aria-label="Find the invoice" autoFocus className="w-full sm:w-72" />
           <Button type="submit" variant="secondary">
             Find invoice

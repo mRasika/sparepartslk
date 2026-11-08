@@ -52,7 +52,7 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
         }
       />
 
-      <Form key={`form:${filterKey}`} action="/parts" className="mb-4 flex flex-wrap items-end gap-2" role="search">
+      <Form key={`form:${filterKey}`} action="/parts" scroll={false} className="mb-4 flex flex-wrap items-end gap-2" role="search">
         <Input
           name="q"
           defaultValue={q}
@@ -89,7 +89,7 @@ export default async function PartsPage({ searchParams }: { searchParams: Search
           Search
         </Button>
         {filtered && (
-          <Link href="/parts" className={buttonVariants({ variant: "ghost" })}>
+          <Link href="/parts" scroll={false} className={buttonVariants({ variant: "ghost" })}>
             Clear
           </Link>
         )}

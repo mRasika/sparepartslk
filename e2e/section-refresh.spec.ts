@@ -38,6 +38,54 @@ test("dashboard: a top-sellers tab reloads only the table; a new period reloads 
   await expectNoFullReload(page);
   await kept(heading);
   await notKept(page.getByRole("term").filter({ hasText: /^Net sales$/ }));
+
+  // Choose dates applies inside the app too (it was a plain form that reloaded the page).
+  await page.getByRole("button", { name: /^Period:/ }).click();
+  await page.getByRole("button", { name: /Choose dates/ }).click();
+  await page.getByRole("button", { name: "Show these dates" }).click();
+  await expect(page).toHaveURL(/from=.*&to=/);
+  await expect(page.getByRole("button", { name: "Period: Custom dates" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show these dates" })).toBeHidden(); // the list closed
+  await expectNoFullReload(page);
+  await kept(heading);
+});
+
+/** Once the page has loaded, puts an element mid-screen without animation (so Playwright needn't scroll to click). */
+async function centre(l: Locator) {
+  await expect(l.page().getByRole("status")).toHaveCount(0); // wait for every part to load, so nothing shifts
+  await l.evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
+  await expect(l).toBeInViewport({ ratio: 1 });
+}
+
+/**
+ * A filter lower down the page must not jump back to the top (phone-sized, so the page scrolls):
+ * what was tapped stays on screen. The position may shift a little when the list gets shorter.
+ */
+async function expectScrollKept(page: Page, target: Locator, url: RegExp) {
+  await centre(target);
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await target.click();
+  await expect(page).toHaveURL(url);
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(target).toBeInViewport();
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+}
+
+test("payments: All unpaid / Overdue only keep the scroll position", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 600 });
+  await login(page, "admin");
+  await page.goto("/payments?view=outstanding");
+  await expectScrollKept(page, page.getByRole("link", { name: "Overdue only" }), /overdue=1/);
+  await expectScrollKept(page, page.getByRole("link", { name: "All unpaid" }), /^(?!.*overdue=1)/);
+});
+
+test("stock: searching keeps the scroll position below the health summary", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 600 });
+  await login(page, "admin");
+  await page.goto("/stock");
+  const box = page.getByLabel("Search stock", { exact: true });
+  await box.fill("BRK");
+  await expectScrollKept(page, page.getByRole("button", { name: "Show", exact: true }), /q=BRK/);
 });
 
 const searches = [
@@ -113,4 +161,10 @@ test("payments: an aging group reloads only the unpaid list, not the summary", a
   await expect(page.getByText(/Showing Not due/)).toBeVisible();
   await expectNoFullReload(page);
   await kept(howLate);
+});
+
+test("dashboard: a top-sellers tab keeps the scroll position", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 600 });
+  await login(page, "admin");
+  await expectScrollKept(page, page.getByRole("link", { name: "Brands" }), /top=brands/);
 });

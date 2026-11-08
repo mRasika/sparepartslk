@@ -37,7 +37,7 @@ export default async function GrnListPage({ searchParams }: { searchParams: Sear
           </Link>
         }
       />
-      <Form key={`form:${filterKey}`} action="/grn" className="mb-4 flex flex-wrap gap-2" role="search">
+      <Form key={`form:${filterKey}`} action="/grn" scroll={false} className="mb-4 flex flex-wrap gap-2" role="search">
         <Input name="q" defaultValue={q} placeholder="GRN or supplier invoice no" aria-label="Search GRNs" className="w-full sm:w-64" />
         <NativeSelect name="supplier" defaultValue={supplier} aria-label="Supplier">
           <NativeSelectOption value="">All suppliers</NativeSelectOption>

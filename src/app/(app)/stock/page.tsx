@@ -86,7 +86,7 @@ export default async function StockPage({ searchParams }: { searchParams: Search
         </Suspense>
       )}
       {/* Keyed by the filters so it shows the new values after a filter link or "Show all". */}
-      <Form key={`form:${filterKey}`} action="/stock" className="mb-4 flex flex-wrap items-center gap-2" role="search">
+      <Form key={`form:${filterKey}`} action="/stock" scroll={false} className="mb-4 flex flex-wrap items-center gap-2" role="search">
         {age && <input type="hidden" name="age" value={age} />}
         {cls && <input type="hidden" name="class" value={cls} />}
         <Input name="q" defaultValue={q} placeholder="SKU, name or OEM no" aria-label="Search stock" className="w-full sm:w-64" />
@@ -109,7 +109,7 @@ export default async function StockPage({ searchParams }: { searchParams: Search
       {filterLabel && (
         <p className="mb-3 text-sm text-muted-foreground">
           Showing {filterLabel} ·{" "}
-          <Link href={hrefFor({})} className="font-medium text-primary hover:underline">
+          <Link href={hrefFor({})} scroll={false} className="font-medium text-primary hover:underline">
             Show all
           </Link>
         </p>
