@@ -1,0 +1,31 @@
+/**
+ * Rules for scanning a part into a line list with a barcode scanner (which types the code, then
+ * Enter). A scan picks a part only on a unique exact match of SKU or barcode; OEM numbers are not
+ * unique, so they never count.
+ */
+
+/** Rows whose SKU or barcode equals the code, ignoring case and surrounding spaces. */
+export function findExactMatches<T extends { sku: string; barcode?: string | null }>(rows: T[], code: string): T[] {
+  const c = code.trim().toLowerCase();
+  if (!c) return [];
+  return rows.filter((r) => r.sku.toLowerCase() === c || r.barcode?.toLowerCase() === c);
+}
+
+/**
+ * The quantity after scanning a part that is already on a line: one more, or for a negative stock
+ * change one further from zero. A value that isn't a whole number is left for the user to fix.
+ */
+export function bumpQty(qty: string): string {
+  const q = qty.trim();
+  if (!q) return "1";
+  if (!/^-?\d+$/.test(q)) return qty;
+  const n = Number(q);
+  return String(n < 0 ? n - 1 : n + 1);
+}
+
+/** The search a scan runs. It never carries the finder's category or bike filters. */
+export function scanLookupUrl(code: string, customerId?: string): string {
+  const params = new URLSearchParams({ q: code });
+  if (customerId) params.set("customerId", customerId);
+  return `/api/parts/search?${params}`;
+}
