@@ -40,6 +40,7 @@ export default async function PrintInvoicePage({ params, searchParams }: Props) 
     <div className="min-h-svh bg-white text-black">
       <PrintToolbar
         backHref={`/invoices/${id}`}
+        backLabel="Back to invoice"
         autoPrint={autoprint === "1"}
         formats={[
           { label: "A4", href: `/print/invoice/${id}?format=a4`, active: !thermal },

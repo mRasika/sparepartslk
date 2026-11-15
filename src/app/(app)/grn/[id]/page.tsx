@@ -1,6 +1,8 @@
+import { Printer } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -31,6 +33,11 @@ export default async function GrnPage({ params }: { params: Promise<{ id: string
       <PageHeader
         title={grn.number}
         description={`Received ${formatDate(grn.receivedDate)} from ${grn.supplierName}`}
+        actions={
+          <Link href={`/print/labels?grn=${grn.id}`} className={buttonVariants({ variant: "outline" })}>
+            <Printer /> Print labels
+          </Link>
+        }
       />
       <dl className="mb-6 grid grid-cols-2 gap-4 rounded-lg border bg-card p-5 sm:grid-cols-4">
         <Fact label="Supplier">{grn.supplierName}</Fact>

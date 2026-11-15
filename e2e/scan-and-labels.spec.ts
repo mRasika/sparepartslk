@@ -47,3 +47,32 @@ test.describe("scanning on a GRN", () => {
     await expect(page.getByLabel("Qty for BRK-001")).toBeFocused();
   });
 });
+
+test.describe("SKU labels", () => {
+  const grnNumber = `GRN-${new Date().getFullYear()}-000001`;
+
+  test("GRN labels default to the received qty", async ({ page }) => {
+    await login(page, "admin");
+    await page.goto(`/grn?q=${grnNumber}`);
+    await page.getByRole("link", { name: grnNumber }).click();
+    await page.getByRole("link", { name: "Print labels" }).click();
+    await expect(page).toHaveURL(/\/print\/labels\?grn=/);
+    await expect(page.getByLabel("Labels for BRK-001")).toHaveValue("10");
+    await expect(page.locator("[data-label]")).toHaveCount(10);
+    await page.getByLabel("Labels for BRK-001").fill("2");
+    await page.getByRole("button", { name: "40 × 30 mm" }).click();
+    await expect(page.locator("[data-label]")).toHaveCount(2);
+    await expect(page.getByLabel("Labels for BRK-001")).toHaveValue("2");
+    await expect(page.getByRole("link", { name: "Back to GRN" })).toBeVisible();
+  });
+
+  test("part page prints one label", async ({ page }) => {
+    await login(page, "admin");
+    await page.goto("/parts?q=BRK-001");
+    await page.getByRole("link", { name: "BRK-001" }).click();
+    await page.getByRole("link", { name: "Print label" }).click();
+    await expect(page.locator("[data-label]")).toHaveCount(1);
+    await expect(page.locator("[data-label] svg")).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "Back to part" })).toBeVisible();
+  });
+});
