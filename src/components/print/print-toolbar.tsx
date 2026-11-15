@@ -8,12 +8,18 @@ import { Button, buttonVariants } from "@/components/ui/button";
 /** Screen-only controls above a printable document; prints automatically when asked. */
 export function PrintToolbar({
   backHref,
+  backLabel,
   formats,
   autoPrint,
+  children,
 }: {
   backHref: string;
+  /** e.g. "Back to invoice". */
+  backLabel: string;
   formats: { label: string; href: string; active: boolean }[];
   autoPrint: boolean;
+  /** Extra controls before the Print button. */
+  children?: React.ReactNode;
 }) {
   useEffect(() => {
     if (!autoPrint) return;
@@ -25,9 +31,9 @@ export function PrintToolbar({
   return (
     <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur print:hidden">
       <Link href={backHref} className={buttonVariants({ variant: "ghost" })}>
-        <ArrowLeft /> Back to invoice
+        <ArrowLeft /> {backLabel}
       </Link>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {formats.map((f) => (
           <Link
             key={f.href}
@@ -38,6 +44,7 @@ export function PrintToolbar({
             {f.label}
           </Link>
         ))}
+        {children}
         <Button onClick={() => window.print()}>
           <Printer /> Print
         </Button>

@@ -4,11 +4,14 @@ import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui/command";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { playErrorBeep } from "@/lib/beep";
+import { findExactMatches, scanLookupUrl } from "@/lib/scan";
 import { cn } from "@/lib/utils";
 import type { PartListRow } from "@/server/services/catalog";
 
 export type PickedPart = Pick<PartListRow, "id" | "sku" | "name" | "oemPartNo" | "qtyOnHand" | "unit"> & {
   binLocation?: string | null;
+  barcode?: string | null;
   /** Set when the search is priced for a customer. */
   price?: string;
 };
@@ -19,10 +22,24 @@ export type PartFilterOptions = {
   vehicleModels: { id: string; label: string }[];
 };
 
+/** How a part was picked: a unique exact SKU/barcode match on Enter ("scan"), or from the list. */
+export type PickHow = "scan" | "list";
+
+/** Identifies one search, so Enter can tell whether the list on screen is for its text. */
+function searchKey(q: string, customerId: string | undefined, categoryId: string, vehicleModelId: string) {
+  return JSON.stringify([q.trim(), customerId ?? "", categoryId, vehicleModelId]);
+}
+
 /**
  * Type-to-search part finder. Arrow keys move, Enter picks; the input clears and keeps focus
  * so the next part can be scanned or typed straight away. Choosing a category or bike narrows
  * the search, and with nothing typed lists everything in it.
+ *
+ * Enter: a row the user arrowed to is picked as before. Otherwise a unique exact SKU or barcode
+ * match is a scan pick, then the highlighted result, else the code is unknown. Matches come from
+ * the list on screen when it was loaded for exactly this text, or else from an immediate,
+ * unfiltered lookup. A USB scanner types the code and Enter in a few ms, so on a lookup the input
+ * clears at once, ready for the next scan.
  */
 export function PartPicker({
   onPick,
@@ -35,7 +52,7 @@ export function PartPicker({
 }: {
   /** Price the results for this customer. */
   customerId?: string;
-  onPick: (part: PickedPart) => void;
+  onPick: (part: PickedPart, how: PickHow) => void;
   /** Extra text shown on each result, e.g. the customer's price. */
   meta?: (part: PickedPart) => React.ReactNode;
   placeholder?: string;
@@ -49,8 +66,14 @@ export function PartPicker({
   const [categoryId, setCategoryId] = useState("");
   const [vehicleModelId, setVehicleModelId] = useState("");
   const [results, setResults] = useState<PickedPart[]>([]);
+  /** The search the results were loaded for (`searchKey`), or null when they are for none. */
+  const [resultsKey, setResultsKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  /** The highlighted result's id (cmdk's value). */
+  const [highlighted, setHighlighted] = useState("");
+  /** The code of the last scan that matched no part. */
+  const [unknownCode, setUnknownCode] = useState<string | null>(null);
   const filtered = Boolean(categoryId || vehicleModelId);
   const active = Boolean(query.trim()) || filtered;
 
@@ -58,9 +81,11 @@ export function PartPicker({
     const q = query.trim();
     if (!q && !categoryId && !vehicleModelId) {
       setResults([]);
+      setResultsKey(null);
       return;
     }
     const controller = new AbortController();
+    const key = searchKey(q, customerId, categoryId, vehicleModelId);
     setLoading(true);
     const timer = setTimeout(async () => {
       const params = new URLSearchParams({ q });
@@ -70,11 +95,13 @@ export function PartPicker({
       try {
         const res = await fetch(`/api/parts/search?${params}`, { signal: controller.signal });
         setResults(res.ok ? await res.json() : []);
+        setResultsKey(res.ok ? key : null);
         setLoading(false);
       } catch {
         // Aborted by a newer keystroke (which owns loading now) or a network failure.
         if (!controller.signal.aborted) {
           setResults([]);
+          setResultsKey(null);
           setLoading(false);
         }
       }
@@ -85,11 +112,71 @@ export function PartPicker({
     };
   }, [query, customerId, categoryId, vehicleModelId]);
 
-  function pick(part: PickedPart) {
-    onPick(part);
+  function clearResults() {
     setQuery("");
     // A filtered list stays for the next pick; a plain search starts over.
-    if (!filtered) setResults([]);
+    if (!filtered) {
+      setResults([]);
+      setResultsKey(null);
+    }
+  }
+
+  function pick(part: PickedPart, how: PickHow) {
+    onPick(part, how);
+    clearResults();
+  }
+
+  function unknown(code: string) {
+    setUnknownCode(code);
+    requestAnimationFrame(() => input.current?.select());
+    playErrorBeep();
+  }
+
+  /**
+   * Enter with text in the finder. The list on screen counts only when it was loaded for exactly
+   * this text and these filters: a scanner types the whole code inside the search delay, so the
+   * list is usually from before the scan and must never decide what gets added.
+   */
+  function enter(code: string) {
+    setUnknownCode(null);
+    const fresh = resultsKey === searchKey(code, customerId, categoryId, vehicleModelId) ? results : null;
+    const chosen = fresh?.find((r) => r.id === highlighted);
+    // The user arrowed to a row: that row, whatever else matches.
+    if (chosen && chosen !== fresh?.[0]) return pick(chosen, "list");
+    if (fresh && !filtered) {
+      // An unfiltered search lists exact matches first, so the loaded list settles it at once,
+      // with no wait that could swallow a quantity typed straight after Enter.
+      const exact = findExactMatches(fresh, code);
+      if (exact.length === 1) return pick(exact[0], "scan");
+      if (exact.length > 1) return; // One part's SKU is another's barcode: the user chooses.
+      if (chosen) return pick(chosen, "list");
+      return unknown(code);
+    }
+    void lookUp(code, chosen);
+  }
+
+  /** Looks the code up without filters. Each scan's lookup runs on its own, so none is lost. */
+  async function lookUp(code: string, fallback: PickedPart | undefined) {
+    clearResults();
+    let rows: PickedPart[] = [];
+    try {
+      const res = await fetch(scanLookupUrl(code, customerId));
+      if (res.ok) rows = await res.json();
+    } catch {
+      // Network failure: treated as no match below.
+    }
+
+    const exact = findExactMatches(rows, code);
+    if (exact.length === 1) return onPick(exact[0], "scan");
+    if (fallback && exact.length === 0) return onPick(fallback, "list");
+    // Put the text back only if nothing new was typed or scanned meanwhile.
+    if (input.current && !input.current.value) setQuery(code);
+    if (exact.length > 1) {
+      setOpen(true);
+      requestAnimationFrame(() => input.current?.select());
+      return;
+    }
+    unknown(code);
   }
 
   /** After choosing a filter, go back to the input so the list opens and typing narrows it. */
@@ -104,7 +191,12 @@ export function PartPicker({
 
   return (
     <div className="flex flex-col gap-2 sm:flex-row">
-      <Command shouldFilter={false} className="relative flex-1 overflow-visible bg-transparent">
+      <Command
+        shouldFilter={false}
+        value={highlighted}
+        onValueChange={setHighlighted}
+        className="relative flex-1 overflow-visible bg-transparent"
+      >
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           {/* cmdk keyboard handling comes from the Command root; a plain input keeps our styling. */}
@@ -113,6 +205,7 @@ export function PartPicker({
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
+              setUnknownCode(null);
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
@@ -121,6 +214,12 @@ export function PartPicker({
             onBlur={() => setOpen(false)}
             onKeyDown={(e) => {
               if (e.key === "Escape") setOpen(false);
+              if (e.key === "Enter" && !e.nativeEvent.isComposing && query.trim()) {
+                // Ours, not cmdk's: the Command root would otherwise pick the highlighted row too.
+                e.preventDefault();
+                e.stopPropagation();
+                enter(query.trim());
+              }
             }}
             placeholder={filtered ? "Type to narrow, or pick from the list" : placeholder}
             aria-label="Find a part"
@@ -128,6 +227,11 @@ export function PartPicker({
             className="h-10 w-full rounded-lg border border-input bg-card pr-3 pl-8 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </div>
+        {unknownCode && (
+          <p role="alert" className="mt-1 text-xs text-destructive">
+            No part with code “{unknownCode}”
+          </p>
+        )}
         <CommandList
           className={cn(
             "absolute top-full right-0 left-0 z-30 mt-1 max-h-96 rounded-lg border bg-popover shadow-md",
@@ -143,7 +247,7 @@ export function PartPicker({
             <CommandItem
               key={p.id}
               value={p.id}
-              onSelect={() => pick(p)}
+              onSelect={() => pick(p, "list")}
               onMouseDown={(e) => e.preventDefault()}
               className="flex items-start justify-between gap-3 px-3 py-2"
             >

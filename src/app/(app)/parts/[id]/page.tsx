@@ -1,4 +1,4 @@
-import { Pencil } from "lucide-react";
+import { Pencil, Printer } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
@@ -64,11 +64,16 @@ export default async function PartPage({ params }: { params: Promise<{ id: strin
         }
         description={`${part.sku}${part.oemPartNo ? `, OEM ${part.oemPartNo}` : ""}`}
         actions={
-          user.role === "admin" && (
-            <Link href={`/parts/${part.id}/edit`} className={buttonVariants({ variant: "outline" })}>
-              <Pencil /> Edit part
+          <>
+            <Link href={`/print/labels?part=${part.id}`} className={buttonVariants({ variant: "outline" })}>
+              <Printer /> Print label
             </Link>
-          )
+            {user.role === "admin" && (
+              <Link href={`/parts/${part.id}/edit`} className={buttonVariants({ variant: "outline" })}>
+                <Pencil /> Edit part
+              </Link>
+            )}
+          </>
         }
       />
 

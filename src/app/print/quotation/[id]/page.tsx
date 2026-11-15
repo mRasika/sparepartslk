@@ -38,6 +38,7 @@ export default async function PrintQuotationPage({ params, searchParams }: Props
     <div className="min-h-svh bg-white text-black">
       <PrintToolbar
         backHref={`/quotations/${id}`}
+        backLabel="Back to quotation"
         autoPrint={autoprint === "1"}
         formats={[{ label: "A4", href: `/print/quotation/${id}`, active: true }]}
       />
