@@ -76,3 +76,80 @@ test.describe("SKU labels", () => {
     await expect(page.getByRole("link", { name: "Back to part" })).toBeVisible();
   });
 });
+
+// Fixes from the final review: a scan uses list results only when they belong to the exact text
+// Enter was pressed on. Own part family (SCAN-…) so later specs that match "BRK-001" by name
+// still find one part.
+test.describe("scan edge cases", () => {
+  test.beforeAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await login(page, "admin");
+    // Playwright reruns beforeAll in a fresh worker after a failure: create the data once.
+    await page.goto("/parts?q=SCAN-10");
+    try {
+      // The list streams in after the page; give it a moment.
+      await page.getByRole("link", { name: "SCAN-10", exact: true }).waitFor({ timeout: 5_000 });
+      return page.close();
+    } catch {
+      // Not there yet: create it below.
+    }
+    await page.goto("/parts/settings");
+    await page.getByRole("button", { name: "Add category" }).click();
+    await page.getByLabel("Name").fill("Scan test");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Category saved")).toBeVisible();
+    for (const [sku, name, category] of [
+      ["SCAN-1", "Scan test part one", "Scan test"],
+      ["SCAN-10", "Scan test part ten", ""],
+    ]) {
+      await page.goto("/parts/new");
+      await page.getByLabel("SKU").fill(sku);
+      await page.getByLabel("Name", { exact: true }).fill(name);
+      if (category) await page.getByLabel("Category").selectOption({ label: category });
+      await page.getByLabel("Retail price (Rs)").fill("100");
+      await page.getByRole("button", { name: "Create part" }).click();
+      await expect(page.getByRole("heading", { name })).toBeVisible();
+    }
+    await page.close();
+  });
+
+  test.beforeEach(async ({ page }) => {
+    await login(page, "admin");
+    await page.goto("/grn/new");
+  });
+
+  test("an unknown code with a category filter set adds nothing", async ({ page }) => {
+    await page.getByLabel("Filter by category").selectOption({ label: "Scan test" });
+    await expect(page.getByRole("option", { name: /SCAN-1/ })).toBeVisible();
+    await scan(page, "NOPE-777");
+    await expect(page.getByText("No part with code “NOPE-777”")).toBeVisible();
+    await expect(page.getByText("No parts added yet")).toBeVisible();
+  });
+
+  test("two unknown codes in a row add nothing", async ({ page }) => {
+    await scan(page, "scan test");
+    await expect(page.getByText("No part with code “scan test”")).toBeVisible();
+    await expect(page.getByRole("option", { name: /^SCAN-1 / })).toBeVisible(); // name matches load
+    await scan(page, "NOPE-778");
+    await expect(page.getByText("No part with code “NOPE-778”")).toBeVisible();
+    await expect(page.getByText("No parts added yet")).toBeVisible();
+  });
+
+  test("a typed search, Enter and the quantity straight away keeps the quantity", async ({ page }) => {
+    await finder(page).fill("scan test part one");
+    await expect(page.getByRole("option", { name: /^SCAN-1 / })).toBeVisible();
+    await finder(page).press("Enter");
+    await page.keyboard.type("3");
+    await expect(page.getByLabel("Qty for SCAN-1", { exact: true })).toHaveValue("3");
+    await expect(finder(page)).toHaveValue("");
+  });
+
+  test("the row chosen with the arrow keys wins over an exact match", async ({ page }) => {
+    await finder(page).fill("scan-1");
+    await expect(page.getByRole("option", { name: /SCAN-10/ })).toBeVisible();
+    await finder(page).press("ArrowDown");
+    await finder(page).press("Enter");
+    await expect(page.getByLabel("Qty for SCAN-10", { exact: true })).toBeFocused();
+    await expect(page.getByLabel("Qty for SCAN-1", { exact: true })).toHaveCount(0);
+  });
+});
