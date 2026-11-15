@@ -1,7 +1,7 @@
 "use client";
 
 import { Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -12,8 +12,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { bumpQty } from "@/lib/scan";
 import { cn } from "@/lib/utils";
-import { PartPicker, type PartFilterOptions, type PickedPart } from "./part-picker";
+import { PartPicker, type PartFilterOptions, type PickedPart, type PickHow } from "./part-picker";
 
 export type GridLine = { key: string; part: PickedPart } & Record<string, unknown>;
 
@@ -29,8 +30,8 @@ export type GridColumn<L extends GridLine> = {
 
 /**
  * Part lines for GRNs, adjustments and invoices: a part finder on top, one row per part.
- * Picking a part that is already listed focuses its row instead of adding a duplicate.
- * Enter in a row's input returns focus to the finder.
+ * Picking a part that is already listed focuses its row instead of adding a duplicate; scanning
+ * it adds one to its quantity. Enter in a row's input returns focus to the finder.
  */
 export function LineItemsGrid<L extends GridLine>({
   lines,
@@ -74,19 +75,57 @@ export function LineItemsGrid<L extends GridLine>({
     setFocusKey(null);
   }, [focusKey, lines]);
 
-  function pick(part: PickedPart) {
-    const existing = lines.find((l) => l.part.id === part.id);
+  // The newest lines, set as soon as a pick changes them: two quick scans can land before the
+  // parent re-renders, and both must build on the latest list or one is lost.
+  const latest = useRef(lines);
+  useLayoutEffect(() => {
+    latest.current = lines;
+  }, [lines]);
+
+  const [flashKey, setFlashKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!flashKey) return;
+    const timer = setTimeout(() => setFlashKey(null), 600);
+    return () => clearTimeout(timer);
+  }, [flashKey]);
+
+  function change(next: L[]) {
+    latest.current = next;
+    onChange(next);
+  }
+
+  function pick(part: PickedPart, how: PickHow) {
+    const current = latest.current;
+    const existing = current.find((l) => l.part.id === part.id);
+    if (how === "list") {
+      if (existing) {
+        setFocusKey(`${existing.key}:${firstField}`);
+        return;
+      }
+      const line = newLine(part);
+      change([...current, line]);
+      setFocusKey(`${line.key}:${firstField}`);
+      return;
+    }
+
+    // A scan: one more of a listed part, or a new line; the cursor stays in the finder for the
+    // next scan unless the new line's quantity must be typed.
     if (existing) {
-      setFocusKey(`${existing.key}:${firstField}`);
+      if (firstField) {
+        const qty = bumpQty(String(existing[firstField] ?? ""));
+        change(current.map((l) => (l.key === existing.key ? { ...l, [firstField]: qty } : l)));
+      }
+      setFlashKey(existing.key);
       return;
     }
     const line = newLine(part);
-    onChange([...lines, line]);
-    setFocusKey(`${line.key}:${firstField}`);
+    change([...current, line]);
+    if (firstField && String(line[firstField] ?? "") === "") setFocusKey(`${line.key}:${firstField}`);
+    else setFlashKey(line.key);
   }
 
   const update = (key: string, patch: Partial<L>) =>
-    onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+    change(latest.current.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
   return (
     <div className="grid gap-3">
@@ -118,7 +157,10 @@ export function LineItemsGrid<L extends GridLine>({
             {lines.map((line) => {
               const error = rowError?.(line);
               return (
-                <TableRow key={line.key} className={cn(error && "bg-destructive/5")}>
+                <TableRow
+                  key={line.key}
+                  className={cn("transition-colors", error && "bg-destructive/5", flashKey === line.key && "bg-primary/10")}
+                >
                   <TableCell className="min-w-48 whitespace-normal">
                     <div className="font-medium">{line.part.sku}</div>
                     <div className="text-xs text-muted-foreground">{line.part.name}</div>
@@ -161,7 +203,7 @@ export function LineItemsGrid<L extends GridLine>({
                       variant="ghost"
                       size="icon-sm"
                       aria-label={`Remove ${line.part.sku}`}
-                      onClick={() => onChange(lines.filter((l) => l.key !== line.key))}
+                      onClick={() => change(latest.current.filter((l) => l.key !== line.key))}
                     >
                       <Trash2 />
                     </Button>
