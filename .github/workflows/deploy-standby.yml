@@ -1,0 +1,72 @@
+# Emergency copy of a Docker company's app on Vercel, running on the company's Neon standby
+# (guide docs/operations/docker-hosting.md, "Switch to the standby" and "Fire drill").
+#
+# Button only: Actions → Deploy standby → Run workflow → version = the APP_VERSION the company's
+# stack runs (e.g. v1.4.0). The standby's data in Neon has that version's database layout, so the
+# app deployed here must be that same version — never a newer one.
+#
+# The Vercel project (region iad1, next to Neon in us-east-1) is set up by hand once: DATABASE_URL =
+# Neon's DIRECT address, BETTER_AUTH_URL = the company's address, BETTER_AUTH_SECRET = the same as
+# the stack, CLIENT_IP_HEADER and SETUP_KEY empty, the company's domain added. This workflow only
+# uploads the code. The current shop's deploys (deploy.yml, region syd1) are not touched.
+name: Deploy standby
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag the company's stack runs (its APP_VERSION), e.g. v1.4.0"
+        required: true
+
+concurrency:
+  group: deploy-standby
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      VERCEL_PROJECT_ID: ${{ secrets.STANDBY_VERCEL_PROJECT_ID }}
+      VERCEL_TEAM_SLUG: ${{ secrets.STANDBY_VERCEL_TEAM_SLUG }}
+      VERCEL_TOKEN: ${{ secrets.STANDBY_VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the release ${{ inputs.version }}
+        run: |
+          case "$VERSION" in v[0-9]*) ;; *) echo "::error::No such release: '$VERSION' (expected a tag like v1.4.0)"; exit 1 ;; esac
+          git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null \
+            || { echo "::error::No such release: $VERSION"; exit 1; }
+          git fetch --depth 1 origin "refs/tags/$VERSION:refs/tags/$VERSION"
+          git checkout --quiet "$VERSION"
+
+      # The committed vercel.json pins the current shop's region (syd1). The standby runs next to
+      # Neon in us-east-1, so this upload says iad1. Only this workspace's copy changes.
+      - name: Run in iad1 (next to Neon)
+        run: |
+          jq '.regions = ["iad1"]' vercel.json >vercel.json.new && mv vercel.json.new vercel.json
+          cat vercel.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The CLI needs the team's ID; look it up from the slug (also fails fast if the token can't see the project).
+      - name: Resolve Vercel team ID
+        run: |
+          org_id=$(curl -sSf -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?slug=$VERCEL_TEAM_SLUG" | jq -r .accountId)
+          echo "VERCEL_ORG_ID=$org_id" >> "$GITHUB_ENV"
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Deploy
+        run: |
+          url=$(vercel deploy --prod --yes --token="$VERCEL_TOKEN")
+          {
+            echo "Deployed: $url"
+            echo ""
+            echo "Standby now runs $VERSION. Check it matches the stack's APP_VERSION."
+          } >> "$GITHUB_STEP_SUMMARY"
