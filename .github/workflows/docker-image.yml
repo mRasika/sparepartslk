@@ -1,0 +1,82 @@
+# The Docker image for company copies on our own server (guide docs/operations/docker-hosting.md).
+#
+# On every release tag (v1.2.3) — or the "Run workflow" button — GitHub builds the image on an ARM
+# machine (the same kind of chip as the Oracle server), tests the whole stack with it
+# (deploy/docker/test/stack-test.sh: first install, update, rollback, broken update, crash, stock
+# check, backup, restore, Neon standby), and only if every check passes stores it privately as
+#   ghcr.io/mrasika/sparepartslk:<tag>        (button runs on a branch: sha-<commit>)
+# In Portainer the operator then sets APP_VERSION to that tag and presses "Update the stack".
+# The current shop on Vercel (deploy.yml) is not affected by this workflow.
+name: Docker image
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-image-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/mrasika/sparepartslk
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # The stack test fills in the app's forms with a small Node script.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Version name
+        id: version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then tag="${{ github.ref_name }}"; else tag="sha-${GITHUB_SHA::7}"; fi
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: sparepartslk:test
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.tag }}
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check the tools inside
+        run: |
+          docker run --rm --entrypoint sh sparepartslk:test -c \
+            'pg_dump --version && gpg --version | head -n 1 && rclone version | head -n 1 && supercronic -version && echo "runs as $(id -un)"'
+          echo "Image size: $(docker image inspect sparepartslk:test --format '{{.Size}}' | numfmt --to=iec)" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Test the whole stack
+        run: bash deploy/docker/test/stack-test.sh sparepartslk:test
+
+      - name: Keep the test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-test-log
+          path: deploy/docker/stack-test.log
+
+      - name: Store the image
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag sparepartslk:test "$IMAGE:$tag"
+          docker push "$IMAGE:$tag"
+          echo "Image ready: $IMAGE:$tag" | tee -a "$GITHUB_STEP_SUMMARY"
