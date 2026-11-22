@@ -59,3 +59,8 @@ supabase/.branches
 /.next-e2e/
 /.next-e2e-setup/
 /.next-build/
+
+# Docker stack test leftovers and filled-in stack settings (never committed)
+/deploy/docker/stack-test.log
+/deploy/docker/stack.env
+*.stack.local

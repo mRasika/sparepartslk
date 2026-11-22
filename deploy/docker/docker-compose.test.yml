@@ -1,0 +1,42 @@
+# For testing the stack (deploy/docker/test/stack-test.sh) — never used on the server.
+# Runs the image just built (TEST_IMAGE) instead of the published one, lets the test reach the app
+# on 127.0.0.1:3100, leaves the Cloudflare tunnel off, and adds stand-ins for the outside services:
+#   standby      a plain Postgres 17 in place of the Neon standby
+#   s3           rclone's own S3 server in place of Cloudflare R2 (the bucket is a folder)
+#   pingcatcher  logs every alert ping, so the test can see which ones were sent
+services:
+  migrate:
+    image: ${TEST_IMAGE:?Set TEST_IMAGE}
+  app:
+    image: ${TEST_IMAGE:?Set TEST_IMAGE}
+    ports:
+      - "127.0.0.1:3100:3000"
+  jobs:
+    image: ${TEST_IMAGE:?Set TEST_IMAGE}
+  tunnel:
+    profiles: ["off"]
+
+  standby:
+    image: postgres:17.12-bookworm
+    environment:
+      POSTGRES_USER: standby
+      POSTGRES_PASSWORD: standby
+      POSTGRES_DB: standby
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U standby -d standby"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  s3:
+    image: rclone/rclone:1.76.0
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mkdir -p /data/sparepartslk-dockertest-backup
+        exec rclone serve s3 --addr :9000 --auth-key s3-test,s3-test-secret /data
+
+  pingcatcher:
+    image: python:3.13-alpine
+    command: ["python", "-u", "-m", "http.server", "8080"]

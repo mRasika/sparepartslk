@@ -1,0 +1,65 @@
+#!/bin/sh
+# Runs on every deploy (the "migrate" container), then stops. In order:
+#   1. a safety copy of the database into the "backups" volume (the newest 5 are kept);
+#   2. the database update (Drizzle) — skipped when the database is newer than this version, which
+#      happens when going back to an older version (a rollback);
+#   3. nothing more: an empty database (no company yet) is filled by the one-time setup screen in
+#      the website, which needs SETUP_KEY. No starting data is loaded here.
+# The app container only starts after this finishes OK.
+#
+# Drizzle applies all pending database changes in ONE transaction: a failed update leaves the
+# database exactly as it was, so there is no "half-finished update" to look after.
+set -eu
+. /usr/local/bin/common.sh
+
+need_env DATABASE_URL
+
+log "Waiting for the database..."
+tries=0
+until psql "$DATABASE_URL" -tAc 'select 1' >/dev/null 2>&1; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 30 ] || fail "The database did not answer for 60 seconds. Check the db container."
+  sleep 2
+done
+
+# With seconds: two deploys in the same minute (an update, then a quick rollback) keep both copies.
+copy="/backups/pre-deploy_$(colombo_stamp)$(date +%S).dump"
+log "1/3 Safety copy of the database: $copy"
+pg_dump --format=custom --no-owner --no-acl --file="$copy" "$DATABASE_URL" \
+  || fail "The safety copy could not be made, so the database was not updated."
+# Keep the newest 5 safety copies.
+ls -1t /backups/pre-deploy_*.dump 2>/dev/null | tail -n +6 | while read -r old; do rm -f "$old"; done
+
+log "2/3 Database update"
+set +e
+result="$(node /tools/db-migrate.mjs 2>&1)"
+code=$?
+set -e
+printf '%s\n' "$result" | sed 's/^/    /'
+case "$code:$result" in
+  0:*MIGRATED*)
+    log "Database updated (${result#*MIGRATED } change(s))." ;;
+  0:*UP-TO-DATE*)
+    log "The database is already up to date: nothing to change." ;;
+  0:*ROLLBACK*)
+    log "The database is newer than this version (a rollback): the database is left as it is."
+    log "Changes this version doesn't know: ${result#*newer=}" ;;
+  3:*)
+    fail "The database and this version disagree about which database changes it has (see the line above: newer = changes this version doesn't know, pending = its own changes the database is missing). Nothing was changed. Ask the developer; put APP_VERSION back to the version that worked. The safety copy is $copy." ;;
+  *)
+    fail "The database update failed (see the lines above). The database was left as it was. Put APP_VERSION back to the version that worked and tell the developer. The safety copy is $copy." ;;
+esac
+
+logins="$(psql "$DATABASE_URL" -tAc 'select count(*) from profiles')"
+if [ "$logins" = "0" ]; then
+  log "3/3 Empty database: open the website to set up the company (the setup screen)."
+  key="$(printf '%s' "${SETUP_KEY:-}" | tr -d ' ')"
+  if [ "${#key}" -lt 24 ]; then
+    log "    SETUP_KEY is missing or shorter than 24 characters: the website says setup is locked."
+    log "    Add it in Portainer (Stacks → the stack → Environment variables) and Update the stack."
+  fi
+else
+  log "3/3 Starting data: the company is already there — skipped."
+fi
+
+log "Finished OK"

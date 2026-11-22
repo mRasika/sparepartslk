@@ -1,0 +1,34 @@
+#!/bin/sh
+# Starts the jobs container: checks the settings, writes the schedule, then runs it with supercronic.
+#   02:00             stock check (reconcile-stock)
+#   BACKUP_SCHEDULE   backup to R2, then the copy into the Neon standby (backup-now)
+# Times are Sri Lanka time (TZ=Asia/Colombo).
+set -eu
+. /usr/local/bin/common.sh
+
+need_env DATABASE_URL COMPANY_SLUG BACKUP_PASSPHRASE R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY
+[ -n "${R2_ENDPOINT:-}" ] || need_env R2_ACCOUNT_ID
+
+export TZ=Asia/Colombo
+schedule="${BACKUP_SCHEDULE:-30 2 * * *}"
+crontab=/tmp/crontab
+{
+  echo "# Written by jobs-start from the stack settings. Sri Lanka time."
+  echo "0 2 * * * reconcile-stock"
+  echo "$schedule backup-now"
+} >"$crontab"
+supercronic -test "$crontab" >/dev/null \
+  || fail "BACKUP_SCHEDULE ($schedule) is not a valid schedule. Example for nightly 02:30: 30 2 * * *"
+
+if [ -z "${STANDBY_DATABASE_URL:-}" ]; then
+  standby="off (no STANDBY_DATABASE_URL)"
+elif [ "${STANDBY_SYNC:-on}" = "on" ]; then
+  standby="on: every backup is loaded into the Neon standby"
+else
+  standby="PAUSED (STANDBY_SYNC=${STANDBY_SYNC})"
+fi
+log "Jobs (Sri Lanka time): 02:00 stock check · $schedule backup to R2"
+log "Standby copy: $standby"
+log "Commands for the Console: backup-now · restore-test · restore <file> --for-real ·"
+log "  standby-now · standby-status · standby-clear --yes · restore-from-standby --for-real"
+exec supercronic "$crontab"

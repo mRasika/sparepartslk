@@ -25,7 +25,24 @@ describe("migrationState: what the migrate job should do", () => {
     expect(migrationState({ applied: [1, 2, 4], journal: [1, 2, 3, 5] })).toEqual({
       action: "disagree",
       newer: [4],
-      pending: [5],
+      pending: [3, 5],
+    });
+  });
+
+  it("a newer change that is later than all of this version's own still disagrees", () => {
+    // The database was updated by a future version AND misses this version's newest change.
+    expect(migrationState({ applied: [1, 2, 99], journal: [1, 2, 3] })).toEqual({
+      action: "disagree",
+      newer: [99],
+      pending: [3],
+    });
+  });
+
+  it("a missing change older than the newest applied one disagrees (Drizzle would skip it)", () => {
+    expect(migrationState({ applied: [1, 3], journal: [1, 2, 3] })).toEqual({
+      action: "disagree",
+      newer: [],
+      pending: [2],
     });
   });
 });

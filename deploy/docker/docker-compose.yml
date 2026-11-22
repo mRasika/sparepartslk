@@ -1,0 +1,119 @@
+# One company's copy of Sparepartslk, as a Portainer stack (docs/operations/docker-hosting.md).
+#
+# Once: docker volume create sparepartslk-<slug>-pgdata   (the database lives there; "remove stack"
+# can't delete it). Then Portainer → Stacks → Add stack → name "sparepartslk-<slug>" → paste this
+# whole file → "Load variables from .env file" (your filled-in stack.env.example) → Deploy the stack.
+#
+# The same file serves every company; only the settings differ. Nothing here opens a port on the
+# server: people reach the app through this company's own Cloudflare tunnel.
+#
+# Start order: db (healthy) → migrate (safety copy + database update, then stops) → app.
+# jobs only needs db, so backups, the standby copy and the restore console keep working when the
+# app is down.
+
+x-app-image: &app-image ghcr.io/mrasika/sparepartslk:${APP_VERSION:?Set APP_VERSION, e.g. v1.0.0}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-database: &database
+  # The db container below. The app talks straight to it (never through a pooler).
+  DATABASE_URL: postgresql://sparepartslk:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/sparepartslk
+  DB_POOL_MAX: ${DB_POOL_MAX:-10}
+
+services:
+  db:
+    image: postgres:17.12-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sparepartslk
+      POSTGRES_DB: sparepartslk
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sparepartslk -d sparepartslk"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    mem_limit: 512m
+    logging: *logging
+
+  migrate:
+    image: *app-image
+    # Portainer saves the loaded variables as stack.env next to this file.
+    env_file: stack.env
+    environment:
+      <<: *database
+    command: ["migrate"]
+    restart: "no"
+    volumes:
+      - backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *logging
+
+  app:
+    image: *app-image
+    env_file: stack.env
+    restart: unless-stopped
+    environment:
+      <<: *database
+      # Times are kept in UTC and shown in Sri Lanka time by the app itself, as on Vercel.
+      TZ: UTC
+      # Visitors only reach the app through the Cloudflare tunnel, which names their address here
+      # (used for sign-in limits).
+      CLIENT_IP_HEADER: cf-connecting-ip
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 1g
+    logging: *logging
+
+  jobs:
+    image: *app-image
+    env_file: stack.env
+    command: ["jobs-start"]
+    restart: unless-stopped
+    environment:
+      <<: *database
+      # The stock check (02:00) and the backup schedule are Sri Lanka time.
+      TZ: Asia/Colombo
+    volumes:
+      - backups:/backups
+    # Only the database: backups and the restore console must keep working when the app is down.
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 512m
+    logging: *logging
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.11.1
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "${TUNNEL_TOKEN:?Set TUNNEL_TOKEN}"]
+    depends_on:
+      - app
+    logging: *logging
+
+volumes:
+  pgdata:
+    external: true
+    name: ${PGDATA_VOLUME:?Set PGDATA_VOLUME, e.g. sparepartslk-<slug>-pgdata}
+  backups:

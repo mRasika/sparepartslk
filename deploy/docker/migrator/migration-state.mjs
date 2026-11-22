@@ -9,14 +9,18 @@
  */
 export function migrationState({ applied, journal }) {
   const known = new Set(journal);
+  const done = new Set(applied);
   // Changes the database has that this version doesn't know (they came with a newer version).
   const newer = applied.filter((t) => !known.has(t));
-  // What Drizzle's migrator would apply: entries newer than the database's last one.
+  // This version's own changes the database doesn't have yet.
+  const pending = journal.filter((t) => !done.has(t));
+  // Drizzle's migrator only applies changes later than the database's last one: a missing change
+  // older than that would be skipped without a word, so it must stop the update too.
   const last = applied.length ? Math.max(...applied) : -Infinity;
-  const pending = journal.filter((t) => t > last);
+  const gap = pending.some((t) => t < last);
 
   let action;
-  if (newer.length && pending.length) action = "disagree";
+  if ((newer.length && pending.length) || gap) action = "disagree";
   else if (newer.length) action = "rollback";
   else if (pending.length) action = "migrate";
   else action = "up-to-date";
