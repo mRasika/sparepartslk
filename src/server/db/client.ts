@@ -10,6 +10,15 @@ function databaseUrl(): string {
   return url;
 }
 
+/**
+ * Connections per app instance, from DB_POOL_MAX (a whole number 1–50), default 4. Vercel keeps it
+ * low (see below); the Docker stack sets 10 because it talks straight to its own database.
+ */
+export function poolMax(env: string | undefined): number {
+  const n = Number(env);
+  return env && Number.isInteger(n) && n >= 1 && n <= 50 ? n : 4;
+}
+
 // Reuse one pool across Next.js dev hot reloads.
 const globalForDb = globalThis as unknown as { pgClient?: postgres.Sql };
 
@@ -19,7 +28,7 @@ const client =
     // DATABASE_URL must be Supavisor's session pooler (port 5432): the transaction pooler (6543)
     // loses pipelined queries, which hung the dashboard on Vercel. Session mode caps the total
     // number of client connections and each Vercel instance holds up to `max`, so keep it low.
-    max: 4,
+    max: poolMax(process.env.DB_POOL_MAX),
     // Required by the Supabase transaction pooler; harmless on a direct connection.
     prepare: false,
     // Serverless instances come and go: close idle connections soon, recycle the rest, and give up
