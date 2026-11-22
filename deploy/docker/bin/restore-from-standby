@@ -1,0 +1,29 @@
+#!/bin/sh
+# Back to this server after the shop worked on the Neon standby (the guide, "Back to Oracle"):
+# copies the standby's data and makes it this stack's REAL database. Safe like "restore": refuses
+# while the app runs, keeps today's database aside and puts it back if loading fails. The standby's
+# guard triggers are left out.
+# Usage: restore-from-standby --for-real
+set -eu
+. /usr/local/bin/common.sh
+
+[ "${1:-}" = "--for-real" ] || fail "Usage: restore-from-standby --for-real   (see the guide, \"Back to Oracle\")"
+need_env DATABASE_URL STANDBY_DATABASE_URL
+
+if curl -fs --max-time 5 http://app:3000/api/health >/dev/null 2>&1; then
+  fail "The app is still running. Stop the app container in Portainer first, then run this again."
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+log "Copying the standby's data..."
+log "Standby: $(show_counts "$STANDBY_DATABASE_URL")"
+pg_dump --format=custom --no-owner --no-acl --schema=public --schema=drizzle \
+  --file="$work/standby.dump" "$STANDBY_DATABASE_URL" \
+  || fail "The standby could not be copied (check STANDBY_DATABASE_URL). Nothing was changed."
+
+/usr/local/bin/load-for-real "$work/standby.dump" ' TRIGGER public [^ ]+ standby_used_'
+
+log "Then, once the shop works here again: point the web address back at this server (the guide),"
+log "run standby-clear --yes, and set STANDBY_SYNC=on (Update the stack)."

@@ -1,0 +1,18 @@
+#!/bin/sh
+# Shows the Neon standby's state: when it was last loaded, from which version, whether it has been
+# used since (written to), and its counts next to the live database's.
+set -eu
+. /usr/local/bin/common.sh
+
+need_env DATABASE_URL STANDBY_DATABASE_URL
+
+state="$(psql "$STANDBY_DATABASE_URL" -X -A -t -F ' | ' -v ON_ERROR_STOP=1 -c "
+  select 'last loaded ' || coalesce(to_char(loaded_at at time zone 'Asia/Colombo', 'YYYY-MM-DD HH24:MI'), 'never'),
+         'from version ' || coalesce(source_version, '-'),
+         case when used_at is null then 'not used since'
+              else 'USED since ' || to_char(used_at at time zone 'Asia/Colombo', 'YYYY-MM-DD HH24:MI') end
+  from standby_meta.sync" 2>/dev/null)" || state=""
+log "Standby: ${state:-never loaded (no standby_meta yet)}"
+log "Sync setting: STANDBY_SYNC=${STANDBY_SYNC:-on}"
+log "Standby:       $(show_counts "$STANDBY_DATABASE_URL" 2>/dev/null || echo 'no app data')"
+log "Live database: $(show_counts "$DATABASE_URL")"

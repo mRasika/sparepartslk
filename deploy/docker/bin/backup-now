@@ -18,7 +18,8 @@ no_backup() {
 need_env DATABASE_URL COMPANY_SLUG BACKUP_PASSPHRASE
 use_r2
 
-name="sparepartslk-${COMPANY_SLUG}_$(colombo_stamp).dump.gpg"
+# With seconds: a backup-now typed right after the scheduled one never replaces it.
+name="sparepartslk-${COMPANY_SLUG}_$(colombo_stamp)$(date +%S).dump.gpg"
 
 log "Backup: copying the database..."
 pg_dump --format=custom --no-owner --no-acl --schema=public --schema=drizzle \
@@ -43,6 +44,27 @@ if [ "$(TZ=Asia/Colombo date +%d)" = "01" ]; then
 fi
 size="$(du -h "$work/$name" | cut -f1)"
 log "R2 backup was saved: $saved ($size)"
+
+# The standby copy: download it back, unlock, load into Neon, compare counts (standby-copy).
+if [ -z "${STANDBY_DATABASE_URL:-}" ]; then
+  log "Standby: off (no STANDBY_DATABASE_URL) — skipped"
+elif [ "${STANDBY_SYNC:-on}" != "on" ]; then
+  log "Standby: paused (STANDBY_SYNC=${STANDBY_SYNC}) — skipped"
+else
+  set +e
+  result="$(/usr/local/bin/standby-copy "daily/$name" "$work/counts" 2>&1)"
+  set -e
+  printf '%s\n' "$result" | grep -v '^STANDBY-'
+  case "$(printf '%s\n' "$result" | tail -n 1)" in
+    STANDBY-OK) ;;
+    *)
+      reason="$(printf '%s\n' "$result" | sed -n 's/^STANDBY-FAILED: //p' | tail -n 1)"
+      reason="${reason:-unknown problem}"
+      ping fail "Backup saved, but standby out of date: $reason"
+      fail "The R2 backup was saved ($saved), but the standby is out of date: $reason."
+      ;;
+  esac
+fi
 
 ping ok "Backup saved: $saved ($size)"
 log "Finished OK"

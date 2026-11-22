@@ -1,0 +1,43 @@
+#!/bin/sh
+# Loads a plain backup (.dump) into the Neon standby as ONE transaction: guard check → replace the
+# app's data → guard triggers → record the load. If anything fails, Neon keeps its previous copy.
+# Called by standby-copy (after every backup); not normally typed by hand.
+# Exit: 0 loaded · 4 refused because the standby has been used · 1 any other problem.
+# Usage: standby-load <file.dump>
+set -eu
+. /usr/local/bin/common.sh
+
+dump="${1:?Usage: standby-load <file.dump>}"
+need_env STANDBY_DATABASE_URL
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+# The app's tables and data, as SQL that first drops what the standby has. Left out: the "public"
+# schema itself and its comment (the standby has its own) and extensions (standby-before.sql).
+pg_restore --list "$dump" >"$work/all" 2>"$work/err" || {
+  log "PROBLEM: the backup file can't be read (damaged?): $(head -c 300 "$work/err")"
+  exit 1
+}
+grep -vE ' SCHEMA - public | COMMENT - SCHEMA (- )?public | EXTENSION ' "$work/all" >"$work/list"
+
+{
+  cat "$LIB/standby-before.sql"
+  pg_restore --clean --if-exists --no-owner --no-acl --use-list "$work/list" -f - "$dump" \
+    || echo "select 1/0 as backup_file_damaged;"
+  cat "$LIB/standby-after.sql"
+} | psql "$STANDBY_DATABASE_URL" -X -q --single-transaction -v ON_ERROR_STOP=1 \
+  -v app_version="${APP_VERSION:-unknown}" >"$work/out" 2>"$work/err" && {
+  log "Standby loaded (version ${APP_VERSION:-unknown})."
+  exit 0
+}
+
+if grep -q 'STANDBY_USED' "$work/err"; then
+  used="$(sed -n 's/.*STANDBY_USED \([0-9: -]*\).*/\1/p' "$work/err" | head -n 1)"
+  log "PROBLEM: the standby has been used since the last copy (first change at $used) — not overwriting it."
+  log "If the shop is back on this server and its data has been brought back (restore-from-standby),"
+  log "run: standby-clear --yes"
+  exit 4
+fi
+log "PROBLEM: the standby could not be loaded — it still has the previous copy. $(grep -m1 -E 'ERROR|FATAL|error' "$work/err" | head -c 300)"
+exit 1

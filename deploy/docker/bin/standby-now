@@ -1,0 +1,27 @@
+#!/bin/sh
+# Loads the NEWEST R2 backup into the Neon standby now (without making a new backup), then compares
+# the counts with the live database. For the Console, e.g. after standby-clear, or to check the
+# standby after setting it up. backup-now does the same after every backup.
+set -eu
+. /usr/local/bin/common.sh
+
+need_env DATABASE_URL STANDBY_DATABASE_URL R2_BUCKET
+use_r2
+newest="$(rclone lsf --files-only "r2:$R2_BUCKET/daily/" | grep '\.dump\.gpg$' | sort | tail -n 1)" \
+  || fail "Could not list the backups in R2 (check the R2 settings)."
+[ -n "$newest" ] || fail "There are no backups in R2 daily/ yet. Run backup-now instead."
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+# The live counts now: equal to the backup's only if nothing changed since it was made, so this is
+# best run when the shop is closed.
+table_counts "$DATABASE_URL" >"$work/counts" || fail "The live database could not be counted."
+
+set +e
+result="$(/usr/local/bin/standby-copy "daily/$newest" "$work/counts" 2>&1)"
+set -e
+printf '%s\n' "$result" | grep -v '^STANDBY-'
+case "$(printf '%s\n' "$result" | tail -n 1)" in
+  STANDBY-OK) log "Standby is up to date with $newest." ;;
+  *) fail "The standby is out of date: $(printf '%s\n' "$result" | sed -n 's/^STANDBY-FAILED: //p' | tail -n 1)." ;;
+esac

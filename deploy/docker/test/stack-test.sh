@@ -263,7 +263,79 @@ check "Restore: data added after the backup is not (it was a real restore)" \
   test "$(sql "select count(*) from customers where name = 'Added after the backup'")" = 0
 check "Restore: the owner can still sign in" sign_in "$OWNER_EMAIL" "$OWNER_PASSWORD"
 
-# @@STANDBY@@ (Task 6) scenarios follow here.
+# 8. The Neon standby (the "standby" container stands in for Neon)
+ssql() { stack exec -T standby psql -U standby -d standby -tAc "$1"; }
+live_counts() { stack exec -T jobs sh -c '. /usr/local/bin/common.sh; table_counts "$DATABASE_URL"'; }
+standby_counts() { stack exec -T jobs sh -c '. /usr/local/bin/common.sh; table_counts "$STANDBY_DATABASE_URL" | grep -v "^standby_meta"'; }
+loaded_at() { ssql "select coalesce(loaded_at::text, 'never') from standby_meta.sync" 2>/dev/null; }
+backup_out="" # the last backup-now run's output
+run_backup() { # run_backup [docker exec -e options…]: backup-now; output kept in backup_out
+  backup_out="$(stack exec -T "$@" jobs backup-now 2>&1)"
+}
+said() { grep -q -- "$1" <<<"$backup_out" || { echo "$backup_out" | tail -4; return 1; }; }
+fail_pinged_with() { grep -q "GET /ping-fail?msg=.*$1" <<<"$(pings)"; }
+
+check "Standby: backup-now loads the standby" run_backup
+check "Standby: the load time is recorded" test "$(ssql 'select loaded_at is not null from standby_meta.sync')" = t
+check "Standby: the same rows as the live database, table by table" test "$(standby_counts)" = "$(live_counts)"
+check "Standby: every table has the guard trigger" \
+  test "$(ssql "select count(*) from pg_trigger where tgname like 'standby_used_%'")" = \
+  "$(ssql "select count(*) from pg_tables where schemaname = 'public'")"
+
+# The shop worked on the standby (after a switch): the next copy must NOT overwrite it.
+ssql "insert into customers (name, tier_id) select 'Sale made on the standby', id from price_tiers limit 1" >/dev/null
+refuses() { ! run_backup "$@" && said "has been used since the last copy" && said "R2 backup was saved"; }
+check "Standby used: backup-now refuses (backup still saved)" refuses
+check "Standby used: the fail ping says why" fail_pinged_with "standby"
+check "Standby used: still refused with STANDBY_SYNC=on set explicitly" refuses -e STANDBY_SYNC=on
+check "Standby used: the sale made there is still there" \
+  test "$(ssql "select count(*) from customers where name = 'Sale made on the standby'")" = 1
+check "Standby-clear: allowed after checking" stack exec -T jobs standby-clear --yes
+check "Standby-clear: the next backup-now loads again" run_backup
+check "Standby-clear: the standby now matches the live database again" test "$(standby_counts)" = "$(live_counts)"
+
+# A sign-in on the standby (e.g. during the fire drill) writes a session row: that counts as used.
+ssql "insert into session (token, user_id, expires_at) select 'drill-token', id, now() + interval '1 day' from \"user\" limit 1" >/dev/null
+check "Standby: a sign-in there marks it as used" test "$(ssql 'select used_at is not null from standby_meta.sync')" = t
+stack exec -T jobs standby-clear --yes >/dev/null 2>&1
+run_backup >/dev/null
+
+# A load that breaks halfway (here: a damaged file) must leave yesterday's standby exactly as it was.
+before_load="$(loaded_at)"
+before_counts="$(standby_counts)"
+damaged_load_refused() {
+  ! stack exec -T jobs sh -c 'pg_dump --format=custom --schema=public --schema=drizzle -f /tmp/full.dump "$DATABASE_URL" &&
+    head -c $(( $(wc -c </tmp/full.dump) / 2 )) /tmp/full.dump >/tmp/half.dump && standby-load /tmp/half.dump'
+}
+check "Standby: a damaged load is refused" damaged_load_refused
+check "Standby: after a failed load the previous copy is untouched (time)" test "$(loaded_at)" = "$before_load"
+check "Standby: after a failed load the previous copy is untouched (rows)" test "$(standby_counts)" = "$before_counts"
+
+# Neon unreachable: the R2 backup still counts, the standby is reported out of date.
+daily_before="$(s3_daily)"
+unreachable() { ! run_backup -e STANDBY_DATABASE_URL=postgresql://x:y@standby:1/x && said "R2 backup was saved" && said "standby is out of date"; }
+check "Standby unreachable: backup-now reports it (backup still saved)" unreachable
+check "Standby unreachable: one more backup in R2" test "$(s3_daily)" -gt "$daily_before"
+check "Standby unreachable: the fail ping says the standby is out of date" fail_pinged_with "standby+out+of+date"
+standby_off() { run_backup -e STANDBY_DATABASE_URL= && said "Standby: off"; }
+check "Standby off (no address): backup-now skips it with a note" standby_off
+standby_paused() { run_backup -e STANDBY_SYNC=off && said "Standby: paused"; }
+check "Standby paused (STANDBY_SYNC=off): backup-now skips it with a note" standby_paused
+
+# Back to Oracle after working on the standby: the standby's data becomes the stack's database,
+# without the standby's guard triggers.
+ssql "update customers set name = 'Renamed on the standby' where name = 'Docker Test Customer'" >/dev/null
+stack stop app >/dev/null 2>&1
+check "Back to Oracle: restore-from-standby loads the standby's data" stack exec -T jobs restore-from-standby --for-real
+deploy "$NEW"
+check "Back to Oracle: Update the stack brings the app back healthy" wait_healthy
+check "Back to Oracle: the change made on the standby is in the stack's database" \
+  test "$(sql "select count(*) from customers where name = 'Renamed on the standby'")" = 1
+check "Back to Oracle: no standby guard triggers in the stack's database" \
+  test "$(sql "select count(*) from pg_trigger where tgname like 'standby_used_%'")" = 0
+check "Back to Oracle: the owner can sign in (writes work)" sign_in "$OWNER_EMAIL" "$OWNER_PASSWORD"
+clear_then_copy() { stack exec -T jobs standby-clear --yes >/dev/null && run_backup; }
+check "Back to Oracle: after standby-clear the nightly copy runs again" clear_then_copy
 
 echo
 if [ "$failures" -gt 0 ]; then
