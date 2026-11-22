@@ -70,15 +70,27 @@ show_counts() {
               from invoices), 'none')"
 }
 
-# Every table in "public" with its row count, one "table|count" line each, sorted. Used to check
-# that a copy (restore, standby) holds exactly what the live database held.
+# Every table in "public" of the database at $1 with its row count, one "table|count" line each,
+# sorted (byte order, the same as dump_counts).
 table_counts() {
   _tables="$(psql "$1" -X -A -t -v ON_ERROR_STOP=1 -c \
-    "select tablename from pg_tables where schemaname = 'public' order by tablename")" || return 1
+    "select tablename from pg_tables where schemaname = 'public'")" || return 1
+  _lines=""
   for _t in $_tables; do
     _n="$(psql "$1" -X -A -t -v ON_ERROR_STOP=1 -c "select count(*) from public.\"$_t\"")" || return 1
-    printf '%s|%s\n' "$_t" "$_n"
+    _lines="$_lines$_t|$_n
+"
   done
+  printf '%s' "$_lines" | LC_ALL=C sort
+}
+
+# The same "table|count" lines, read from a backup file (.dump) itself: the rows of every "public"
+# table exactly as they were when the backup was made. A copy loaded from it must match these.
+dump_counts() {
+  pg_restore --data-only --schema=public -f - "$1" | awk '
+    /^COPY public\./ { t = $2; sub(/^public\./, "", t); gsub(/"/, "", t); n = 0; inside = 1; next }
+    inside && /^\\\.$/ { print t "|" n; inside = 0; next }
+    inside { n++ }' | LC_ALL=C sort
 }
 
 # Tells the uptime monitor how a backup went: ping ok "<message>" / ping fail "<message>".

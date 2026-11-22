@@ -19,11 +19,18 @@ trap 'rm -rf "$work"' EXIT
 
 log "Copying the standby's data..."
 log "Standby: $(show_counts "$STANDBY_DATABASE_URL")"
+# Note when the copy was taken: standby-clear refuses if anything is written to the standby after
+# this (those changes would not be on this server).
+psql "$STANDBY_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
+  -c "alter table standby_meta.sync add column if not exists copied_at timestamptz" \
+  -c "alter table standby_meta.sync add column if not exists last_write_at timestamptz" \
+  -c "update standby_meta.sync set copied_at = now()" \
+  || fail "Could not read the standby's bookkeeping (is STANDBY_DATABASE_URL really the standby?). Nothing was changed."
 pg_dump --format=custom --no-owner --no-acl --schema=public --schema=drizzle \
   --file="$work/standby.dump" "$STANDBY_DATABASE_URL" \
   || fail "The standby could not be copied (check STANDBY_DATABASE_URL). Nothing was changed."
 
 /usr/local/bin/load-for-real "$work/standby.dump" ' TRIGGER public [^ ]+ standby_used_'
 
-log "Then, once the shop works here again: point the web address back at this server (the guide),"
-log "run standby-clear --yes, and set STANDBY_SYNC=on (Update the stack)."
+log "Then: Update the stack, check the app, run standby-clear --yes, and set STANDBY_SYNC=on (Update"
+log "the stack). standby-clear refuses if anything was written to the standby after this copy."

@@ -65,7 +65,7 @@ domain in your Cloudflare account), and the newest version with a **green tick**
 → Docker image**.
 
 In short: tunnel (3.1) → R2 bucket (3.2) → Neon standby (3.3) → settings file (3.4) → volume + stack
-(3.5) → setup screen → empty `SETUP_KEY` → before go-live checks (3.6).
+(3.5) → setup screen → empty `SETUP_KEY` → Vercel standby project (3.7) → before go-live checks (3.6).
 
 ### 3.1 Cloudflare tunnel (the address and HTTPS)
 1. **Zero Trust → Networks → Tunnels → Create a tunnel → Cloudflared.** Name: `sparepartslk-newshop`.
@@ -85,9 +85,13 @@ In short: tunnel (3.1) → R2 bucket (3.2) → Neon standby (3.3) → settings f
 ### 3.3 Neon (the standby)
 1. **Neon → New project.** Name `sparepartslk-newshop`, **Postgres 17** (not the default 18: the
    backup tools are version 17), region **AWS US East 1 (N. Virginia)**, Free plan.
-2. **Connect → turn "Connection pooling" OFF** and copy the address (it has no `-pooler` in it). Add
-   `?sslmode=require` at the end if it isn't there. This is `STANDBY_DATABASE_URL`. **Never use the
-   pooled address**: the app loses queries behind it.
+2. **Connect → turn "Connection pooling" OFF** and copy the address (it has no `-pooler` in it). Keep
+   `?sslmode=require` at the end; **remove `&channel_binding=require`** if Neon added it (the app's
+   database library may refuse it). This is `STANDBY_DATABASE_URL`. **Never use the pooled address**:
+   the app loses queries behind it.
+3. **One Neon project per company.** The standby refuses to load into a database that has data but
+   isn't a standby, or into another company's standby. Never copy one company's settings file for
+   another without changing this address.
 
 ### 3.4 The settings file
 1. Copy [`deploy/docker/stack.env.example`](../../deploy/docker/stack.env.example) to
@@ -128,13 +132,46 @@ In short: tunnel (3.1) → R2 bucket (3.2) → Neon standby (3.3) → settings f
 
 ### 3.6 Before the company goes live (all three, logged in section 8.3)
 1. **A real backup and standby copy:** jobs **Console** (section 8) → `backup-now`. It must end with
-   *"Finished OK"*, show *"R2 backup was saved"* and *"Standby: same rows as the live database in all …
-   tables."* Check the file in the R2 bucket.
+   *"Finished OK"*, show *"R2 backup was saved"* and *"Standby: same rows as the backup in all …
+   tables."* Check the file in the R2 bucket. (Before the setup screen is filled in, `backup-now` only
+   says *"No company yet"*: an empty database is never backed up.)
 2. **A restore practice:** `restore-test` → *"Restore practice PASSED"*.
 3. **The fire drill** (section 10): the whole switch to the standby and back.
 4. Optional but recommended, in your uptime monitor (uptime-kuma): an HTTP monitor on
    `https://<address>/api/health` (answers `ok`), and a **Push** monitor with a 25-hour heartbeat whose
    address goes in `BACKUP_PING_URL` (and its failure address, if it has one, in `BACKUP_PING_FAIL_URL`).
+5. Recommended: in the R2 bucket's settings, turn on **object versioning / lock** if your plan has it,
+   so even a stolen R2 key can't delete old backups.
+
+### 3.7 The Vercel standby project (the emergency copy of the app)
+Set it up now, so a switch (section 9) is only a DNS change and a button.
+1. **Vercel → Add New → Project** (the account the GitHub token below belongs to): name
+   `sparepartslk-newshop-standby`. You don't connect a Git repository: the "Deploy standby" workflow
+   uploads the code.
+2. **Settings → Functions → Region: Washington, D.C., USA (iad1)** (next to Neon in us-east-1). The
+   workflow also says iad1 when it uploads.
+3. **Settings → Environment Variables** (Production), exactly:
+
+   | Name | Value |
+   |---|---|
+   | `DATABASE_URL` | the standby's **direct** Neon address (3.3), with `?sslmode=require`, **without** `channel_binding` |
+   | `BETTER_AUTH_URL` | the company's address, the same as the stack's |
+   | `BETTER_AUTH_SECRET` | **the same** as the stack's (people stay signed in after a switch) |
+   | `CLIENT_IP_HEADER` | leave out (Vercel gives the visitor's address itself) |
+   | `SETUP_KEY` | leave out |
+
+4. **Settings → Domains → Add** the company's address. Vercel shows it as "invalid configuration"
+   while the DNS points at the tunnel. That is expected; verify it with the TXT record Vercel offers,
+   so the switch later is instant.
+5. **GitHub → the repository → Settings → Secrets and variables → Actions → New repository secret**:
+   `STANDBY_VERCEL_TOKEN` (Vercel → Account Settings → Tokens, scoped to that team),
+   `STANDBY_VERCEL_PROJECT_ID` (the project's Settings → General → Project ID),
+   `STANDBY_VERCEL_TEAM_SLUG` (the team's slug in its URL).
+6. Run **Actions → Deploy standby** once with the stack's `APP_VERSION`, then sign in on the
+   deployment's own `….vercel.app` address. That proves the settings. It also marks the standby
+   **used** (a sign-in writes a session row): run `standby-clear --yes` afterwards, as after a fire
+   drill.
+7. Leave the project on the Hobby plan while idle. Upgrade to **Pro** on the day it serves the shop.
 
 ---
 
@@ -176,7 +213,7 @@ that the backup can really be restored.
 
 In the **jobs → Logs** after a good night:
 - *"R2 backup was saved: daily/…"*
-- *"Standby loaded (version v…)."* and *"Standby: same rows as the live database in all N tables."*
+- *"Standby loaded (version v…)."* and *"Standby: same rows as the backup in all N tables."*
 - *"Finished OK"*, and the uptime monitor gets its ok ping.
 
 Anytime: jobs **Console** → `standby-status` shows when the standby was last loaded, from which version,
@@ -186,7 +223,13 @@ whether it has been **used** since, and its counts next to the live ones.
 in), it is marked **used**. From then on the nightly copy **refuses to overwrite it** and says *"the
 standby has been used since the last copy"* until someone runs `standby-clear --yes`. This protects
 sales made on the standby during an emergency. **Only run `standby-clear --yes`** after a fire drill, or
-after the standby's data has been brought back to the server (section 9.2).
+after the standby's data has been brought back to the server (section 9.2). If the standby was written
+to **after** `restore-from-standby` copied it, `standby-clear` refuses: those changes are not on the
+server yet.
+
+**While `STANDBY_SYNC=off`**, every backup still runs but sends a **fail** ping saying *"standby
+PAUSED"*. That is on purpose: a pause forgotten after a switch would otherwise leave the standby
+going stale without anyone noticing.
 
 ---
 
@@ -202,7 +245,7 @@ The jobs **Console:** **Portainer → Containers → `…-jobs-1` → Console** 
 | `restore <file> --for-real` | A real restore (8.2) |
 | `standby-status` | The standby's state (section 7) |
 | `standby-now` | Loads the newest R2 backup into the standby now (without a new backup) |
-| `standby-clear --yes` | Clears the "used" mark (section 7: only when the standby's data is safe) |
+| `standby-clear --yes` | Clears the "used" mark (section 7: only when the standby's data is safe). `--yes --force` only if it refuses and you are sure the later changes aren't needed |
 | `restore-from-standby --for-real` | Back to the server after working on the standby (9.2) |
 
 ### 8.1 What is saved, and where
@@ -261,15 +304,23 @@ Sales made since the last backup have to be re-entered from paper.
 
 ### 9.2 Back to the server
 1. The stack runs again on a working server (a new server: section 2 and section 3 with the **same**
-   settings file, **don't fill in the setup screen**). Keep `STANDBY_SYNC=off`.
-2. After closing time: **Containers → `…-app-1` → Stop.**
-3. jobs **Console** → `restore-from-standby --for-real`. It copies the standby's data, keeps the
+   settings file, **don't fill in the setup screen**). Keep `STANDBY_SYNC=off`. Until step 4 the new
+   server's database is empty; `backup-now` skips it (*"No company yet"*), so it never becomes the
+   newest backup.
+2. After closing time: **stop the shop using the Vercel copy first.** In **Cloudflare DNS** change the
+   company's record back to the tunnel (`<id>.cfargotunnel.com`, proxied). Visitors now get the
+   server's (stopped) app, so nothing more can be written to the standby. Tell the shop to wait a few
+   minutes.
+3. **Containers → `…-app-1` → Stop.**
+4. jobs **Console** → `restore-from-standby --for-real`. It copies the standby's data, keeps the
    server's old database aside, and loads the standby's data as the real database.
-4. **Update the stack.** `migrate` → code 0, `app` → healthy.
-5. **Cloudflare DNS:** change the record back to the tunnel (`<id>.cfargotunnel.com`, proxied). Check
-   the site, sign in, check the last invoice made on the standby is there.
+5. **Update the stack.** `migrate` → code 0, `app` → healthy. Check the site, sign in, check the last
+   invoice made on the standby is there.
 6. jobs **Console** → `standby-clear --yes` → Environment variables → `STANDBY_SYNC=on` → **Update the
    stack** → `backup-now`. It must end with *"Finished OK"*.
+   - `standby-clear` refuses with *"written to after restore-from-standby copied it"*? Something was
+     still using the Vercel copy after step 2 (DNS can take a few minutes). Stop the app, run
+     `restore-from-standby --for-real` again, Update the stack, then `standby-clear --yes`.
 7. Vercel can go back to Hobby.
 
 ---
@@ -302,6 +353,8 @@ The whole of section 9, for practice, with the shop **closed**:
 | The monitor says a backup was missed, or the log says *"No backup was saved"* | jobs → Logs: the line starting `PROBLEM:` says why (R2 settings, internet…). Fix it, then `backup-now` |
 | Log says *"The R2 backup was saved (…), but the standby is out of date"* | The backup is fine; the standby kept its previous copy. The reason follows. Neon down or its limit reached → check Neon's dashboard (section 8.4), then `standby-now` |
 | Log says *"the standby has been used since the last copy"* | Someone wrote to the standby. Was it a fire drill or a finished emergency (data brought back)? Then `standby-clear --yes`. If you don't know why, **don't clear it**: `standby-status`, and ask the developer |
+| Log says *"points at a database that already has data but isn't a standby copy"* or *"this standby belongs to another company"* | `STANDBY_DATABASE_URL` is wrong (a live database, or another company's Neon project). Nothing was changed. Put this company's own Neon address (3.3), Update the stack, then `standby-now` |
+| The monitor gets *"standby PAUSED"* every night | `STANDBY_SYNC` is still `off` from a switch or drill. Back on the server? Set it to `on` and Update the stack |
 | `Deploy standby` says *"No such release"* | The version typed isn't a release tag. Use the exact `APP_VERSION` from the settings file, e.g. `v1.4.0` |
 | `restore-test` can't unlock the backup | `BACKUP_PASSPHRASE` doesn't match the one the backup was made with. Tell the developer the same day |
 | The server is lost | Section 9 |

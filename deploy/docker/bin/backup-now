@@ -18,6 +18,15 @@ no_backup() {
 need_env DATABASE_URL COMPANY_SLUG BACKUP_PASSPHRASE
 use_r2
 
+# An empty database (the setup screen not filled in yet, or a new server after a disaster before the
+# restore) is never backed up: it would become the "newest" backup that restore picks.
+logins="$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c 'select count(*) from profiles')" \
+  || no_backup "The database could not be read."
+if [ "$logins" = "0" ]; then
+  log "No company yet (the setup screen hasn't been filled in, or the restore hasn't run): nothing to back up — skipped."
+  exit 0
+fi
+
 # With seconds: a backup-now typed right after the scheduled one never replaces it.
 name="sparepartslk-${COMPANY_SLUG}_$(colombo_stamp)$(date +%S).dump.gpg"
 
@@ -25,8 +34,6 @@ log "Backup: copying the database..."
 pg_dump --format=custom --no-owner --no-acl --schema=public --schema=drizzle \
   --file="$work/db.dump" "$DATABASE_URL" \
   || no_backup "The database could not be copied."
-# The counts at the moment of the copy, to check the standby against (backup-now's standby step).
-table_counts "$DATABASE_URL" >"$work/counts" || no_backup "The database could not be counted."
 
 printf '%s' "$BACKUP_PASSPHRASE" >"$work/pass"
 gpg --batch --quiet --pinentry-mode loopback --passphrase-file "$work/pass" \
@@ -49,12 +56,17 @@ log "R2 backup was saved: $saved ($size)"
 if [ -z "${STANDBY_DATABASE_URL:-}" ]; then
   log "Standby: off (no STANDBY_DATABASE_URL) — skipped"
 elif [ "${STANDBY_SYNC:-on}" != "on" ]; then
-  log "Standby: paused (STANDBY_SYNC=${STANDBY_SYNC}) — skipped"
+  # Paused on purpose during a switch, but easy to forget afterwards: nag every backup until it is
+  # back on, so the standby never goes stale unnoticed.
+  log "Standby: paused (STANDBY_SYNC=${STANDBY_SYNC}) — skipped. Set STANDBY_SYNC=on once the shop is back on this server."
+  ping fail "Backup saved ($saved), but standby PAUSED (STANDBY_SYNC=${STANDBY_SYNC}): it is not being updated"
+  log "Finished (backup saved, standby paused)"
+  exit 0
 else
   set +e
-  result="$(/usr/local/bin/standby-copy "daily/$name" "$work/counts" 2>&1)"
+  result="$(/usr/local/bin/standby-copy "daily/$name" 2>&1)"
   set -e
-  printf '%s\n' "$result" | grep -v '^STANDBY-'
+  printf '%s\n' "$result" | grep -v '^STANDBY-' || true
   case "$(printf '%s\n' "$result" | tail -n 1)" in
     STANDBY-OK) ;;
     *)

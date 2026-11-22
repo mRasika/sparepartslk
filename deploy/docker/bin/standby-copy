@@ -1,15 +1,15 @@
 #!/bin/sh
 # The standby half of the nightly chain (called by backup-now and standby-now):
 #   download the backup BACK from R2 → unlock it → load it into the Neon standby → compare the row
-#   counts, table by table, with the live database's counts taken at backup time.
+#   counts, table by table, with the rows in the backup file itself.
 # Downloading it back proves every night that R2, the file and the passphrase all work.
-# Prints one last line "STANDBY-OK" or "STANDBY-FAILED: <reason>"; exit 0 / 1 (4 = standby used).
-# Usage: standby-copy <daily/name.dump.gpg> <counts-file>
+# Prints one last line "STANDBY-OK" or "STANDBY-FAILED: <reason>"; exit 0 / 1 (4 = standby used,
+# 5 = the address points at something that isn't this company's standby).
+# Usage: standby-copy <daily/name.dump.gpg>
 set -eu
 . /usr/local/bin/common.sh
 
-object="${1:?Usage: standby-copy <daily/name.dump.gpg> <counts-file>}"
-counts="${2:?Usage: standby-copy <daily/name.dump.gpg> <counts-file>}"
+object="${1:?Usage: standby-copy <daily/name.dump.gpg>}"
 need_env STANDBY_DATABASE_URL BACKUP_PASSPHRASE
 use_r2
 
@@ -26,20 +26,26 @@ gpg --batch --quiet --pinentry-mode loopback --passphrase-file "$work/pass" \
   || { rm -f "$work/pass"; failed "the backup downloaded from R2 could not be unlocked"; }
 rm -f "$work/pass" "$file"
 
+# What the standby must hold afterwards: the backup's own rows.
+dump_counts "$work/db.dump" >"$work/counts"
+[ -s "$work/counts" ] || failed "the rows in the backup could not be counted (damaged file?)"
+
 set +e
 /usr/local/bin/standby-load "$work/db.dump"
 code=$?
 set -e
-[ "$code" -eq 0 ] || {
-  [ "$code" -eq 4 ] && failed "the standby has been used since the last copy (not overwritten)" 4
-  failed "the standby could not be loaded (it keeps the previous copy)"
-}
+case "$code" in
+  0) ;;
+  4) failed "the standby has been used since the last copy (not overwritten)" 4 ;;
+  5) failed "the standby address points at a database that isn't this company's standby (not overwritten)" 5 ;;
+  *) failed "the standby could not be loaded (it keeps the previous copy)" ;;
+esac
 
 table_counts "$STANDBY_DATABASE_URL" >"$work/standby-counts" || failed "the standby could not be counted"
-if ! diff "$counts" "$work/standby-counts" >"$work/diff"; then
-  log "Rows differ (< live database at backup time, > standby):"
+if ! diff "$work/counts" "$work/standby-counts" >"$work/diff"; then
+  log "Rows differ (< the backup, > the standby):"
   sed 's/^/    /' "$work/diff"
-  failed "the standby's rows differ from the live database's"
+  failed "the standby's rows differ from the backup's"
 fi
-log "Standby: same rows as the live database in all $(wc -l <"$counts" | tr -d ' ') tables."
+log "Standby: same rows as the backup in all $(wc -l <"$work/counts" | tr -d ' ') tables."
 echo "STANDBY-OK"

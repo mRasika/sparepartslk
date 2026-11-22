@@ -1,6 +1,6 @@
 -- Runs on the Neon standby at the end of every load (standby-load), in the SAME transaction.
 -- Puts a guard trigger on every app table (any write marks the standby as used), then records the
--- load. psql variable: app_version.
+-- load. psql variables: app_version, company.
 
 do $$
 declare
@@ -16,7 +16,8 @@ begin
 end;
 $$;
 
-insert into standby_meta.sync (id, loaded_at, source_version, used_at)
-values (1, now(), :'app_version', null)
+insert into standby_meta.sync (id, loaded_at, source_version, company, used_at, last_write_at, copied_at)
+values (1, now(), :'app_version', :'company', null, null, null)
 on conflict (id) do update
-  set loaded_at = excluded.loaded_at, source_version = excluded.source_version, used_at = null;
+  set loaded_at = excluded.loaded_at, source_version = excluded.source_version,
+      company = excluded.company, used_at = null, last_write_at = null, copied_at = null;

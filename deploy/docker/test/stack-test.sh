@@ -137,6 +137,24 @@ redirects_to() { # redirects_to <page> <target>: a 307 to <target>, or Next's in
   return 1
 }
 check "First install: the login page sends people to the setup screen" redirects_to /login /setup
+# An empty database (no company yet — or a new server after a disaster, before the restore) must
+# never become the newest backup.
+empty_db_backup_skipped() {
+  local out
+  out="$(stack exec -T jobs backup-now 2>&1)" || { echo "$out" | tail -3; return 1; }
+  grep -q "No company yet" <<<"$out" || { echo "$out" | tail -3; return 1; }
+  [ "$(stack exec -T s3 sh -c 'ls /data/sparepartslk-dockertest-backup/daily/ 2>/dev/null | wc -l')" = 0 ]
+}
+check "First install: backup-now skips an empty database (nothing sent to R2)" empty_db_backup_skipped
+# Only what the website needs reaches the internet-facing app container.
+app_has_no_backup_secrets() {
+  local leaked=""
+  for v in BACKUP_PASSPHRASE R2_SECRET_ACCESS_KEY R2_ACCESS_KEY_ID STANDBY_DATABASE_URL TUNNEL_TOKEN DB_PASSWORD; do
+    stack exec -T app printenv "$v" >/dev/null 2>&1 && leaked="$leaked $v"
+  done
+  [ -z "$leaked" ] || { echo "    in the app container:$leaked"; return 1; }
+}
+check "The app container doesn't get the backup, standby or tunnel secrets" app_has_no_backup_secrets
 
 # A database that disagrees with the version (a change this version doesn't know AND one of its own
 # not applied) must stop, not be skipped as a rollback.
@@ -300,16 +318,49 @@ check "Standby: a sign-in there marks it as used" test "$(ssql 'select used_at i
 stack exec -T jobs standby-clear --yes >/dev/null 2>&1
 run_backup >/dev/null
 
-# A load that breaks halfway (here: a damaged file) must leave yesterday's standby exactly as it was.
+# A load that breaks halfway must leave yesterday's standby exactly as it was. A view on the standby
+# blocks dropping "customers", so the load fails AFTER it has already dropped other tables.
 before_load="$(loaded_at)"
 before_counts="$(standby_counts)"
-damaged_load_refused() {
-  ! stack exec -T jobs sh -c 'pg_dump --format=custom --schema=public --schema=drizzle -f /tmp/full.dump "$DATABASE_URL" &&
-    head -c $(( $(wc -c </tmp/full.dump) / 2 )) /tmp/full.dump >/tmp/half.dump && standby-load /tmp/half.dump'
+ssql "create view standby_meta.blocker as select id from public.customers" >/dev/null
+load_out=""
+midway_failure_reported() {
+  load_out="$(stack exec -T jobs sh -c 'pg_dump --format=custom --schema=public --schema=drizzle -f /tmp/full.dump "$DATABASE_URL" && standby-load /tmp/full.dump' 2>&1)" \
+    && return 1
+  grep -q "could not be loaded" <<<"$load_out" || { echo "$load_out" | tail -3; return 1; }
 }
-check "Standby: a damaged load is refused" damaged_load_refused
+check "Standby: a load that fails halfway is reported" midway_failure_reported
 check "Standby: after a failed load the previous copy is untouched (time)" test "$(loaded_at)" = "$before_load"
 check "Standby: after a failed load the previous copy is untouched (rows)" test "$(standby_counts)" = "$before_counts"
+check "Standby: after a failed load the guard triggers are still there" \
+  test "$(ssql "select count(*) from pg_trigger where tgname like 'standby_used_%'")" = \
+  "$(ssql "select count(*) from pg_tables where schemaname = 'public'")"
+ssql "drop view standby_meta.blocker" >/dev/null
+
+# The standby is checked against the BACKUP's rows, not the live database's rows now: a sale made
+# after the backup must not raise a false alarm.
+sql "insert into customers (name, tier_id) select 'Sale after the backup', id from price_tiers limit 1" >/dev/null
+standby_now_ok() {
+  local out
+  out="$(stack exec -T jobs standby-now 2>&1)" || { echo "$out" | tail -4; return 1; }
+  grep -q "Standby is up to date" <<<"$out"
+}
+check "Standby-now: compares with the backup, so a later sale is no false alarm" standby_now_ok
+
+# Pointed at the wrong database by mistake: never overwrite data that isn't this company's standby.
+ssql "create database not_a_standby" >/dev/null
+stack exec -T standby psql -U standby -d not_a_standby -qc "create table precious (x int); insert into precious values (1)" >/dev/null
+not_a_standby_refused() {
+  ! run_backup -e STANDBY_DATABASE_URL=postgresql://standby:standby@standby:5432/not_a_standby &&
+    said "isn't a standby copy" && said "R2 backup was saved"
+}
+check "Wrong address: a database with data but no standby marker is refused" not_a_standby_refused
+check "Wrong address: its data is untouched" \
+  test "$(stack exec -T standby psql -U standby -d not_a_standby -tAc 'select count(*) from precious')" = 1
+before_load="$(loaded_at)"
+other_company_refused() { ! run_backup -e COMPANY_SLUG=othershop && said "belongs to another company"; }
+check "Wrong address: another company's standby is refused" other_company_refused
+check "Wrong address: the other company's standby is untouched" test "$(loaded_at)" = "$before_load"
 
 # Neon unreachable: the R2 backup still counts, the standby is reported out of date.
 daily_before="$(s3_daily)"
@@ -321,6 +372,7 @@ standby_off() { run_backup -e STANDBY_DATABASE_URL= && said "Standby: off"; }
 check "Standby off (no address): backup-now skips it with a note" standby_off
 standby_paused() { run_backup -e STANDBY_SYNC=off && said "Standby: paused"; }
 check "Standby paused (STANDBY_SYNC=off): backup-now skips it with a note" standby_paused
+check "Standby paused: the fail ping nags until it is turned back on" fail_pinged_with "standby+PAUSED"
 
 # Back to Oracle after working on the standby: the standby's data becomes the stack's database,
 # without the standby's guard triggers.
@@ -334,8 +386,17 @@ check "Back to Oracle: the change made on the standby is in the stack's database
 check "Back to Oracle: no standby guard triggers in the stack's database" \
   test "$(sql "select count(*) from pg_trigger where tgname like 'standby_used_%'")" = 0
 check "Back to Oracle: the owner can sign in (writes work)" sign_in "$OWNER_EMAIL" "$OWNER_PASSWORD"
-clear_then_copy() { stack exec -T jobs standby-clear --yes >/dev/null && run_backup; }
-check "Back to Oracle: after standby-clear the nightly copy runs again" clear_then_copy
+# A sale made on the standby AFTER restore-from-standby copied it is not on the server: clearing the
+# standby (and so letting the next backup wipe it) must be refused.
+ssql "insert into customers (name, tier_id) select 'Sale after the copy', id from price_tiers limit 1" >/dev/null
+late_write_blocks_clear() {
+  local out
+  out="$(stack exec -T jobs standby-clear --yes 2>&1)" && return 1
+  grep -q "written to after restore-from-standby copied it" <<<"$out" || { echo "$out" | tail -3; return 1; }
+}
+check "Back to Oracle: standby-clear refuses when the standby was written to after the copy" late_write_blocks_clear
+clear_then_copy() { stack exec -T jobs standby-clear --yes --force >/dev/null && run_backup; }
+check "Back to Oracle: after standby-clear --force the nightly copy runs again" clear_then_copy
 
 echo
 if [ "$failures" -gt 0 ]; then

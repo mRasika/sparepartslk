@@ -59,10 +59,17 @@ services:
 
   app:
     image: *app-image
-    env_file: stack.env
     restart: unless-stopped
+    # Only what the website needs. The backup passphrase, the R2 key, the standby address and the
+    # tunnel token stay out of the one container the internet talks to (no env_file here on purpose).
     environment:
       <<: *database
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set BETTER_AUTH_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET}
+      SETUP_KEY: ${SETUP_KEY:-}
+      FEATURE_SALES_TARGET: ${FEATURE_SALES_TARGET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
       # Times are kept in UTC and shown in Sri Lanka time by the app itself, as on Vercel.
       TZ: UTC
       # Visitors only reach the app through the Cloudflare tunnel, which names their address here

@@ -2,16 +2,32 @@
 # Clears the "standby has been used" mark, so the next backup may overwrite the Neon standby again.
 # ONLY after the standby's data is safe: the shop is back on this server and restore-from-standby
 # has brought the data back — or after a fire drill (nothing real was done on the standby).
-# Usage: standby-clear --yes
+# Refuses when the standby was written to AFTER restore-from-standby copied it: those changes are not
+# on this server, and the next backup would wipe them.
+# Usage: standby-clear --yes [--force]
 set -eu
 . /usr/local/bin/common.sh
 
 [ "${1:-}" = "--yes" ] || fail "Usage: standby-clear --yes   (only once the standby's data is safe — see the guide)"
+force="${2:-}"
 need_env STANDBY_DATABASE_URL
 
-was="$(psql "$STANDBY_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c "
-  select coalesce(to_char(used_at at time zone 'Asia/Colombo', 'YYYY-MM-DD HH24:MI'), 'not used')
+state="$(psql "$STANDBY_DATABASE_URL" -X -A -t -F '|' -v ON_ERROR_STOP=1 -c "
+  select coalesce(to_char(used_at at time zone 'Asia/Colombo', 'YYYY-MM-DD HH24:MI'), 'not used'),
+         coalesce(to_char(copied_at at time zone 'Asia/Colombo', 'YYYY-MM-DD HH24:MI'), ''),
+         coalesce(to_char(last_write_at at time zone 'Asia/Colombo', 'YYYY-MM-DD HH24:MI:SS'), ''),
+         (copied_at is not null and last_write_at > copied_at)
   from standby_meta.sync")" || fail "Could not read the standby's state (has it ever been loaded?)."
-psql "$STANDBY_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -c "update standby_meta.sync set used_at = null" \
+was="$(printf '%s' "$state" | cut -d'|' -f1)"
+copied="$(printf '%s' "$state" | cut -d'|' -f2)"
+last="$(printf '%s' "$state" | cut -d'|' -f3)"
+late="$(printf '%s' "$state" | cut -d'|' -f4)"
+
+if [ "$late" = "t" ] && [ "$force" != "--force" ]; then
+  fail "The standby was written to after restore-from-standby copied it ($copied; last change $last). Those changes are NOT on this server, and the next backup would wipe them. Take the Vercel copy offline (DNS back to this server), run restore-from-standby --for-real again, then standby-clear --yes. Only if you are sure those changes are not needed: standby-clear --yes --force"
+fi
+
+psql "$STANDBY_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 \
+  -c "update standby_meta.sync set used_at = null, last_write_at = null, copied_at = null" \
   || fail "Could not clear the mark."
 log "Standby mark cleared (it was: $was). The next backup will load the standby again."
