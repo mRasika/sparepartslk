@@ -1,2 +1,10 @@
 # pnpm patches must keep LF line endings or they stop applying.
 *.patch text eol=lf
+# The Docker image runs these on Linux: Windows line endings (CRLF) would break them.
+Dockerfile text eol=lf
+*.sh text eol=lf
+*.mjs text eol=lf
+*.sql text eol=lf
+*.yml text eol=lf
+deploy/docker/bin/* text eol=lf
+deploy/docker/test/* text eol=lf

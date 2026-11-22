@@ -1,0 +1,26 @@
+# Kept out of the Docker build (Dockerfile): local packages and build output, git, secrets, tests
+# and docs. The image is built from source on GitHub, never with anything from a developer's PC.
+node_modules
+.next
+.next-*
+.git
+.github
+.env*
+!.env.example
+e2e
+e2e-stress
+tests
+# Test-runner settings: they import the test folders above, and the build type-checks every .ts file.
+playwright*.config.ts
+vitest.config.ts
+docs
+test-results
+playwright-report
+coverage
+.superpowers
+.claude
+.vercel
+supabase
+deploy/docker/stack.env
+deploy/docker/*.local
+*.log
