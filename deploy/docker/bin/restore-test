@@ -1,0 +1,31 @@
+#!/bin/sh
+# Restore practice: proves a backup can be opened and loaded, WITHOUT touching the real database.
+#   restore-test                          the newest daily backup
+#   restore-test daily/<file>.dump.gpg    a chosen one
+# Downloads it from R2, unlocks it, loads it into a throw-away database on the same database
+# server, shows the counts next to the real ones, then deletes the throw-away database.
+set -eu
+. /usr/local/bin/common.sh
+
+need_env DATABASE_URL BACKUP_PASSPHRASE
+use_r2
+
+work="$(mktemp -d)"
+scratch="restore_test_$(colombo_stamp | tr -d '-')"
+target="$(printf '%s' "$DATABASE_URL" | sed -E "s#/[^/?]*(\?.*)?\$#/$scratch\1#")"
+cleanup() {
+  psql "$DATABASE_URL" -X -q -c "drop database if exists \"$scratch\"" >/dev/null 2>&1 || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+
+file="$(fetch_backup "${1:-}" "$work")" || exit 1
+log "Restore practice with $(basename "$file")"
+
+psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -c "create database \"$scratch\"" \
+  || fail "Could not make the throw-away database."
+/usr/local/bin/restore.sh "$file" "$target" || fail "The backup could not be loaded (see the lines above)."
+
+log "In the backup:     $(show_counts "$target")"
+log "Real database now: $(show_counts "$DATABASE_URL")"
+log "Restore practice PASSED. The throw-away database is deleted; nothing real was changed."

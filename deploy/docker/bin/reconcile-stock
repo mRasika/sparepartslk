@@ -1,0 +1,11 @@
+#!/bin/sh
+# The nightly stock check (02:00): flags every part whose stored quantity differs from the sum of
+# its stock movements. The owner sees them under Stock → Health. Same database function the
+# current shop runs from Supabase's pg_cron (supabase/cron.sql).
+set -eu
+. /usr/local/bin/common.sh
+
+need_env DATABASE_URL
+found="$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c 'select public.reconcile_stock()')" \
+  || fail "The stock check could not run (see the line above)."
+log "Stock check: $found new difference(s) found."

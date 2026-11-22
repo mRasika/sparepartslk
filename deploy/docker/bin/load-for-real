@@ -1,0 +1,37 @@
+#!/bin/sh
+# Shared last step of "restore" and "restore-from-standby" (not for typing by hand): sets today's
+# database aside under another name, loads <file> as the new real database, and puts today's back
+# if loading fails. The caller has already checked the app is stopped.
+# Usage: load-for-real <file> [extra-exclude-regex]
+set -eu
+. /usr/local/bin/common.sh
+
+file="${1:?Usage: load-for-real <file> [extra-exclude-regex]}"
+exclude="${2:-}"
+need_env DATABASE_URL
+
+dbname="$(printf '%s' "$DATABASE_URL" | sed -E 's#^.*/([^/?]+)(\?.*)?$#\1#')"
+admin="$(printf '%s' "$DATABASE_URL" | sed -E 's#/[^/?]*(\?.*)?$#/postgres\1#')"
+kept="${dbname}_before_restore_$(colombo_stamp | tr -d '-')$(date +%S)"
+
+log "Keeping today's database as $kept"
+psql "$admin" -X -q -v ON_ERROR_STOP=1 \
+  -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = '$dbname' and pid <> pg_backend_pid()" \
+  -c "alter database \"$dbname\" rename to \"$kept\"" \
+  -c "create database \"$dbname\"" \
+  || fail "Could not set the database aside. Nothing was changed."
+
+put_back() {
+  log "Loading failed: putting today's database back."
+  psql "$admin" -X -q -c "drop database if exists \"$dbname\"" -c "alter database \"$kept\" rename to \"$dbname\"" \
+    || log "PROBLEM: could not put it back automatically. Today's data is safe in the database $kept."
+  exit 1
+}
+
+log "Loading $(basename "$file") ..."
+/usr/local/bin/restore.sh "$file" "$DATABASE_URL" "$exclude" || put_back
+
+log "Restored: $(show_counts "$DATABASE_URL")"
+log "Today's database is kept as $kept (delete it later in the db console when all is well)."
+log "Now in Portainer: Stacks → this stack → Update the stack (with APP_VERSION as it is). That brings the"
+log "restored database up to this version and then starts the app. Don't just start the app container."

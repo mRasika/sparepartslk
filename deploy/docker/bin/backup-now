@@ -1,0 +1,48 @@
+#!/bin/sh
+# Copies the database off the server: pg_dump (the app's schemas "public" and "drizzle") → locked
+# with BACKUP_PASSPHRASE → this company's Cloudflare R2 bucket, daily/ (and monthly/ on the 1st).
+# Runs on BACKUP_SCHEDULE (nightly 02:30 by default); type backup-now in the jobs Console to run it
+# at once. The uptime monitor gets an ok ping when all went well, a fail ping with the reason if not.
+set -eu
+. /usr/local/bin/common.sh
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+# Stop without a backup: tell the uptime monitor, then stop with the reason.
+no_backup() {
+  ping fail "No backup was saved: $1"
+  fail "$1 No backup was saved."
+}
+
+need_env DATABASE_URL COMPANY_SLUG BACKUP_PASSPHRASE
+use_r2
+
+name="sparepartslk-${COMPANY_SLUG}_$(colombo_stamp).dump.gpg"
+
+log "Backup: copying the database..."
+pg_dump --format=custom --no-owner --no-acl --schema=public --schema=drizzle \
+  --file="$work/db.dump" "$DATABASE_URL" \
+  || no_backup "The database could not be copied."
+# The counts at the moment of the copy, to check the standby against (backup-now's standby step).
+table_counts "$DATABASE_URL" >"$work/counts" || no_backup "The database could not be counted."
+
+printf '%s' "$BACKUP_PASSPHRASE" >"$work/pass"
+gpg --batch --quiet --pinentry-mode loopback --passphrase-file "$work/pass" \
+  --symmetric --cipher-algo AES256 --output "$work/$name" "$work/db.dump" \
+  || { rm -f "$work/pass"; no_backup "The copy could not be locked (gpg)."; }
+rm -f "$work/pass" "$work/db.dump"
+
+rclone copyto "$work/$name" "r2:$R2_BUCKET/daily/$name" \
+  || no_backup "The backup could not be sent to R2 (check the R2 settings and the internet)."
+saved="daily/$name"
+if [ "$(TZ=Asia/Colombo date +%d)" = "01" ]; then
+  rclone copyto "$work/$name" "r2:$R2_BUCKET/monthly/$name" \
+    || no_backup "The monthly copy could not be sent to R2 (the daily one was saved)."
+  saved="$saved and monthly/$name"
+fi
+size="$(du -h "$work/$name" | cut -f1)"
+log "R2 backup was saved: $saved ($size)"
+
+ping ok "Backup saved: $saved ($size)"
+log "Finished OK"

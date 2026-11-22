@@ -1,0 +1,36 @@
+#!/bin/sh
+# Puts a backup back as the REAL database (after a disaster). docs/operations/docker-hosting.md
+# explains when.
+#   restore <file> --for-real      <file> = daily/<name>.dump.gpg from R2, "newest" for the newest
+#                                  daily one, or /backups/pre-deploy_<stamp>.dump (a safety copy)
+# Safe by design:
+#   - refuses while the app is running (stop the app container in Portainer first);
+#   - keeps today's database under another name (sparepartslk_before_restore_<stamp>) instead of
+#     deleting it, and puts it back if loading the backup fails.
+set -eu
+. /usr/local/bin/common.sh
+
+wanted="${1:-}"
+[ -n "$wanted" ] && [ "${2:-}" = "--for-real" ] \
+  || fail "Usage: restore <file> --for-real   (try restore-test first: it changes nothing)"
+need_env DATABASE_URL
+
+if curl -fs --max-time 5 http://app:3000/api/health >/dev/null 2>&1; then
+  fail "The app is still running. Stop the app container in Portainer first, then run this again."
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+case "$wanted" in
+  /backups/*.dump)
+    [ -f "$wanted" ] || fail "There is no $wanted (list them with: ls /backups)."
+    ;;
+  *)
+    need_env BACKUP_PASSPHRASE
+    use_r2
+    [ "$wanted" = "newest" ] && wanted=""
+    wanted="$(fetch_backup "$wanted" "$work")" || exit 1
+    ;;
+esac
+
+/usr/local/bin/load-for-real "$wanted"

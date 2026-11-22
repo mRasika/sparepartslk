@@ -216,7 +216,54 @@ check "Crash: Docker restarted the app" \
   test "$(docker inspect -f '{{.RestartCount}}' "$(cid app)")" -gt "$restarts_before"
 check "Crash: the app becomes healthy again" wait_healthy
 
-# @@JOBS@@ (Task 5) and @@STANDBY@@ (Task 6) scenarios follow here.
+# 6. The jobs container: stock check and backup
+check "Jobs container runs on Sri Lanka time" test "$(stack exec -T jobs date +%z)" = "+0530"
+# A part whose stored quantity has no stock movements behind it: the nightly check must flag it.
+sql "insert into parts (sku, name, qty_on_hand) values ('DOCKER-1', 'Docker test part', 999)" >/dev/null
+sql "insert into customers (name, tier_id) select 'Docker Test Customer', id from price_tiers limit 1" >/dev/null
+check "Stock check flags a wrong quantity" stack exec -T jobs reconcile-stock
+check "Stock check: one difference recorded" \
+  test "$(sql "select count(*) from stock_reconciliation_issues i join parts p on p.id = i.part_id where p.sku = 'DOCKER-1'")" = 1
+s3_daily() { stack exec -T s3 sh -c 'ls /data/sparepartslk-dockertest-backup/daily/ 2>/dev/null' | grep -c '\.dump\.gpg$'; }
+pings() { stack logs --no-log-prefix pingcatcher 2>&1; }
+check "Backup: backup-now finishes OK" stack exec -T jobs backup-now
+check "Backup: one encrypted backup in R2 daily/" test "$(s3_daily)" = 1
+pinged() { grep -q "GET /$1" <<<"$(pings)"; }
+check "Backup: the uptime monitor got the ok ping" pinged ping-ok
+wrong_key_fails_loudly() {
+  local out
+  if out="$(stack exec -T -e R2_SECRET_ACCESS_KEY=wrong jobs backup-now 2>&1)"; then return 1; fi
+  grep -q 'PROBLEM: .*No backup was saved' <<<"$out" || { echo "$out" | tail -3; return 1; }
+  pinged ping-fail
+}
+check "Backup with a wrong R2 key fails loudly (PROBLEM line + fail ping)" wrong_key_fails_loudly
+restore_practice_passes() {
+  local out
+  out="$(stack exec -T jobs restore-test 2>&1)"
+  grep -q 'Restore practice PASSED' <<<"$out" || { echo "$out" | tail -5; return 1; }
+}
+check "Restore practice: the newest backup loads and the counts match" restore_practice_passes
+
+# 7. Restore for real
+restore_refused() { # it must fail AND say why
+  local out
+  if out="$(stack exec -T jobs restore newest --for-real 2>&1)"; then return 1; fi
+  grep -q 'still running' <<<"$out"
+}
+check "Restore refuses while the app is running" restore_refused
+sql "insert into customers (name, tier_id) select 'Added after the backup', id from price_tiers limit 1" >/dev/null
+stack stop app >/dev/null 2>&1
+check "Restore the newest R2 backup for real" stack exec -T jobs restore newest --for-real
+check "Restore: today's database kept aside" \
+  test "$(stack exec -T db psql -U sparepartslk -d postgres -tAc "select count(*) from pg_database where datname like 'sparepartslk_before_restore_%'")" = 1
+deploy "$NEW" # "Update the stack", as the guide says after a restore
+check "Restore: Update the stack brings the app back healthy" wait_healthy
+check "Restore: the backed-up data is there" test "$(sql "select count(*) from parts where sku = 'DOCKER-1'")" = 1
+check "Restore: data added after the backup is not (it was a real restore)" \
+  test "$(sql "select count(*) from customers where name = 'Added after the backup'")" = 0
+check "Restore: the owner can still sign in" sign_in "$OWNER_EMAIL" "$OWNER_PASSWORD"
+
+# @@STANDBY@@ (Task 6) scenarios follow here.
 
 echo
 if [ "$failures" -gt 0 ]; then
