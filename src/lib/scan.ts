@@ -30,6 +30,27 @@ export function scanLookupUrl(code: string, customerId?: string): string {
   return `/api/parts/search?${params}`;
 }
 
+/** Why a scan added nothing: no such code, signed out, or the lookup itself failed. */
+export type ScanProblem = "unknown" | "signed-out" | "failed";
+
+/** What a lookup response that isn't OK means. */
+export function lookupProblem(status: number): Exclude<ScanProblem, "unknown"> {
+  return status === 401 ? "signed-out" : "failed";
+}
+
+/** The message under the finder for a scan that added nothing. */
+export function scanProblemText(problem: ScanProblem, code: string): string {
+  switch (problem) {
+    case "unknown":
+      return `No part with code “${code}”`;
+    case "signed-out":
+      // Signing in on this page would lose the unsaved lines; another tab shares the sign-in.
+      return `“${code}” not added: you are signed out. Sign in again in another tab, then scan it again.`;
+    case "failed":
+      return `Couldn’t look up “${code}”. Check the connection and scan it again.`;
+  }
+}
+
 /**
  * Applies results in the order they were asked for. Quick scans of different parts look up at
  * the same time and can come back in any order; each scan's lines still go in in scan order.

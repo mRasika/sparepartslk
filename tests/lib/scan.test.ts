@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { bumpQty, createInOrder, findExactMatches, scanLookupUrl } from "@/lib/scan";
+import {
+  bumpQty,
+  createInOrder,
+  findExactMatches,
+  lookupProblem,
+  scanLookupUrl,
+  scanProblemText,
+} from "@/lib/scan";
 
 describe("findExactMatches", () => {
   const rows = [
@@ -105,5 +112,21 @@ describe("createInOrder", () => {
     expect(applied).toEqual([2]);
     expect(queue.busy).toBe(false);
     error.mockRestore();
+  });
+});
+
+describe("scan problems", () => {
+  it("a 401 means signed out; any other failure is a lookup failure", () => {
+    expect(lookupProblem(401)).toBe("signed-out");
+    expect(lookupProblem(404)).toBe("failed");
+    expect(lookupProblem(500)).toBe("failed");
+  });
+
+  it("each problem says what happened and what to do", () => {
+    expect(scanProblemText("unknown", "X1")).toBe("No part with code “X1”");
+    expect(scanProblemText("signed-out", "X1")).toBe(
+      "“X1” not added: you are signed out. Sign in again in another tab, then scan it again.",
+    );
+    expect(scanProblemText("failed", "X1")).toBe("Couldn’t look up “X1”. Check the connection and scan it again.");
   });
 });

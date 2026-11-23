@@ -179,4 +179,24 @@ test.describe("scan follow-ups", () => {
     await expect(page.getByLabel(/^Qty for /)).toHaveCount(2);
     expect(await lineOrder(page)).toEqual(["SCAN-1", "SCAN-10"]);
   });
+
+  test("a lookup that fails says so instead of 'No part with code'", async ({ page }) => {
+    await page.route(
+      (url) => url.pathname === "/api/parts/search" && url.searchParams.get("q") === "SCAN-1",
+      (route) => route.abort("internetdisconnected"),
+    );
+    await scan(page, "SCAN-1");
+    await expect(page.getByText("Couldn’t look up “SCAN-1”. Check the connection and scan it again.")).toBeVisible();
+    await expect(page.getByText("No parts added yet")).toBeVisible();
+  });
+
+  test("a signed-out lookup says to sign in again", async ({ page }) => {
+    await page.route(
+      (url) => url.pathname === "/api/parts/search" && url.searchParams.get("q") === "SCAN-1",
+      (route) => route.fulfill({ status: 401, body: "Sign in required" }),
+    );
+    await scan(page, "SCAN-1");
+    await expect(page.getByText("“SCAN-1” not added: you are signed out.", { exact: false })).toBeVisible();
+    await expect(page.getByText("No parts added yet")).toBeVisible();
+  });
 });

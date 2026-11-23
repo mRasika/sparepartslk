@@ -5,7 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui/command";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { playErrorBeep, unlockAudio } from "@/lib/beep";
-import { createInOrder, findExactMatches, scanLookupUrl } from "@/lib/scan";
+import {
+  createInOrder,
+  findExactMatches,
+  lookupProblem,
+  scanLookupUrl,
+  scanProblemText,
+  type ScanProblem,
+} from "@/lib/scan";
 import { cn } from "@/lib/utils";
 import type { PartListRow } from "@/server/services/catalog";
 
@@ -72,8 +79,8 @@ export function PartPicker({
   const [open, setOpen] = useState(false);
   /** The highlighted result's id (cmdk's value). */
   const [highlighted, setHighlighted] = useState("");
-  /** The code of the last scan that matched no part. */
-  const [unknownCode, setUnknownCode] = useState<string | null>(null);
+  /** Why the last scan added nothing, shown under the finder until the text changes. */
+  const [problem, setProblem] = useState<{ kind: ScanProblem; code: string } | null>(null);
   /** Applies scan lookups in scan order. */
   const [queue] = useState(createInOrder);
   const filtered = Boolean(categoryId || vehicleModelId);
@@ -128,8 +135,8 @@ export function PartPicker({
     clearResults();
   }
 
-  function unknown(code: string) {
-    setUnknownCode(code);
+  function fail(kind: ScanProblem, code: string) {
+    setProblem({ kind, code });
     requestAnimationFrame(() => input.current?.select());
     playErrorBeep();
   }
@@ -140,7 +147,7 @@ export function PartPicker({
    * list is usually from before the scan and must never decide what gets added.
    */
   function enter(code: string) {
-    setUnknownCode(null);
+    setProblem(null);
     const fresh = resultsKey === searchKey(code, customerId, categoryId, vehicleModelId) ? results : null;
     const chosen = fresh?.find((r) => r.id === highlighted);
     // An earlier scan is still being looked up: this one must not overtake it.
@@ -158,7 +165,7 @@ export function PartPicker({
       if (exact.length === 1) return pick(exact[0], "scan");
       if (exact.length > 1) return; // One part's SKU is another's barcode: the user chooses.
       if (chosen) return pick(chosen, "list");
-      return unknown(code);
+      return fail("unknown", code);
     }
     void lookUp(code, chosen);
   }
@@ -172,28 +179,36 @@ export function PartPicker({
     void queue.add(fetchRows(code), (rows) => settle(code, rows, fallback));
   }
 
-  async function fetchRows(code: string): Promise<PickedPart[]> {
+  async function fetchRows(code: string): Promise<PickedPart[] | Exclude<ScanProblem, "unknown">> {
     try {
       const res = await fetch(scanLookupUrl(code, customerId));
-      return res.ok ? await res.json() : [];
+      return res.ok ? await res.json() : lookupProblem(res.status);
     } catch {
-      return []; // Network failure: treated as no match.
+      return "failed"; // Offline or the server didn't answer.
     }
   }
 
-  /** What a looked-up scan does: add its part, offer a choice, or say the code is unknown. */
-  function settle(code: string, rows: PickedPart[], fallback: PickedPart | undefined) {
+  /** What a looked-up scan does: add its part, offer a choice, or say why it added nothing. */
+  function settle(code: string, rows: PickedPart[] | ScanProblem, fallback: PickedPart | undefined) {
+    // Put the text back only if nothing new was typed or scanned meanwhile.
+    const putBack = () => {
+      if (input.current && !input.current.value) setQuery(code);
+    };
+    // A failed lookup adds nothing, not even the highlighted row: the code may be another part's.
+    if (typeof rows === "string") {
+      putBack();
+      return fail(rows, code);
+    }
     const exact = findExactMatches(rows, code);
     if (exact.length === 1) return onPick(exact[0], "scan");
     if (fallback && exact.length === 0) return onPick(fallback, "list");
-    // Put the text back only if nothing new was typed or scanned meanwhile.
-    if (input.current && !input.current.value) setQuery(code);
+    putBack();
     if (exact.length > 1) {
       setOpen(true);
       requestAnimationFrame(() => input.current?.select());
       return;
     }
-    unknown(code);
+    fail("unknown", code);
   }
 
   /** After choosing a filter, go back to the input so the list opens and typing narrows it. */
@@ -222,7 +237,7 @@ export function PartPicker({
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
-              setUnknownCode(null);
+              setProblem(null);
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
@@ -246,9 +261,9 @@ export function PartPicker({
             className="h-10 w-full rounded-lg border border-input bg-card pr-3 pl-8 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </div>
-        {unknownCode && (
+        {problem && (
           <p role="alert" className="mt-1 text-xs text-destructive">
-            No part with code “{unknownCode}”
+            {scanProblemText(problem.kind, problem.code)}
           </p>
         )}
         <CommandList
