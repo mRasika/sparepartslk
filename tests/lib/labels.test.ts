@@ -6,6 +6,7 @@ import {
   isEncodableSku,
   isLabelSize,
   labelProblem,
+  printConfirmText,
 } from "@/lib/labels";
 
 describe("label fit", () => {
@@ -43,5 +44,14 @@ describe("sizes and SKUs", () => {
     expect(isEncodableSku("BRK-001 /A")).toBe(true);
     expect(isEncodableSku("බ-1")).toBe(false);
     expect(isEncodableSku("")).toBe(false);
+  });
+});
+
+describe("printConfirmText", () => {
+  it("asks only for more than 50 labels", () => {
+    expect(printConfirmText(0)).toBeNull();
+    expect(printConfirmText(50)).toBeNull();
+    expect(printConfirmText(51)).toBe("Print 51 labels?");
+    expect(printConfirmText(340)).toBe("Print 340 labels?");
   });
 });

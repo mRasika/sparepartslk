@@ -9,6 +9,7 @@ import {
   isLabelSize,
   LABEL_SIZES,
   labelProblem,
+  printConfirmText,
   QUIET_ZONE_MM,
   type LabelSize,
 } from "@/lib/labels";
@@ -57,6 +58,7 @@ export function LabelSheet({ items, backHref, backLabel }: { items: LabelItem[];
   const small = width < 45;
   // No SVG means the SKU can't be encoded: it gets no labels.
   const labels = items.filter((i) => i.svg).flatMap((i) => Array.from({ length: clampLabelCount(counts[i.partId] ?? "") }, () => i));
+  const confirmTitle = printConfirmText(labels.length);
 
   return (
     <div className="min-h-svh bg-white text-black">
@@ -66,7 +68,20 @@ export function LabelSheet({ items, backHref, backLabel }: { items: LabelItem[];
 .sku-label .bars svg { display: block; width: 100%; height: 100%; }
 @media print { .sku-label:not(:last-child) { break-after: page; } }
 `}</style>
-      <PrintToolbar backHref={backHref} backLabel={backLabel} formats={[]} autoPrint={false}>
+      <PrintToolbar
+        backHref={backHref}
+        backLabel={backLabel}
+        formats={[]}
+        autoPrint={false}
+        confirm={
+          confirmTitle
+            ? {
+                title: confirmTitle,
+                description: `That uses ${labels.length} labels from the roll. Bulk parts like bolts are often labelled per bin, not per piece: check the counts first.`,
+              }
+            : null
+        }
+      >
         {(Object.keys(LABEL_SIZES) as LabelSize[]).map((s) => (
           <Button key={s} variant={s === size ? "secondary" : "ghost"} aria-pressed={s === size} onClick={() => chooseSize(s)}>
             {LABEL_SIZES[s].label}

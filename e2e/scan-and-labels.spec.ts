@@ -225,9 +225,36 @@ test.describe("scan follow-ups", () => {
     await expect(page.getByRole("option", { name: /SCAN-20/ })).toBeVisible();
     await scan(page, "SCAN-20");
     await expect(page.getByText("“SCAN-20” is used by 2 parts. Choose one:")).toBeVisible();
-    await expect(page.getByRole("option")).toHaveCount(2);
+    await expect(page.getByRole("listbox").getByRole("option")).toHaveCount(2);
     await page.getByRole("option", { name: /SCAN-21/ }).click();
     await expect(page.getByLabel("Qty for SCAN-21", { exact: true })).toBeFocused();
     await expect(page.getByLabel("Qty for SCAN-20", { exact: true })).toHaveCount(0);
+  });
+
+  test("printing more than 50 labels asks first", async ({ page }) => {
+    // Count print calls instead of opening the browser's print dialog.
+    await page.addInitScript(() => {
+      (window as unknown as { printed: number }).printed = 0;
+      window.print = () => void (window as unknown as { printed: number }).printed++;
+    });
+    const printed = () => page.evaluate(() => (window as unknown as { printed: number }).printed);
+    await page.goto(`/grn?q=GRN-${new Date().getFullYear()}-000001`);
+    await page.getByRole("link", { name: `GRN-${new Date().getFullYear()}-000001` }).click();
+    await page.getByRole("link", { name: "Print labels" }).click();
+
+    // 10 labels: prints at once.
+    await page.getByRole("button", { name: "Print" }).click();
+    await expect.poll(printed).toBe(1);
+
+    await page.getByLabel("Labels for BRK-001").fill("60");
+    await page.getByRole("button", { name: "Print" }).click();
+    await expect(page.getByRole("dialog", { name: "Print 60 labels?" })).toBeVisible();
+    await page.getByRole("button", { name: "Check counts" }).click();
+    await expect(page.getByRole("dialog")).toBeHidden();
+    expect(await printed()).toBe(1);
+
+    await page.getByRole("button", { name: "Print" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Print" }).click();
+    await expect.poll(printed).toBe(2);
   });
 });

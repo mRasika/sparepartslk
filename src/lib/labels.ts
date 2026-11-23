@@ -43,3 +43,11 @@ export function clampLabelCount(v: string | number): number {
   if (!/^\d+$/.test(s)) return 0;
   return Math.min(Number(s), MAX_LABELS);
 }
+
+/** More labels than this in one print asks first: a GRN of bulk parts can default to hundreds. */
+const LARGE_PRINT = 50;
+
+/** The question to ask before printing this many labels, or null when it's a normal amount. */
+export function printConfirmText(count: number): string | null {
+  return count > LARGE_PRINT ? `Print ${count} labels?` : null;
+}
