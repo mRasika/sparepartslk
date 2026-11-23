@@ -1,4 +1,4 @@
-import { revalidateTag, unstable_cache } from "next/cache";
+import { unstable_cache, updateTag } from "next/cache";
 import { listBrands, listCategories, listPriceTiers, listVehicleModels } from "@/server/services/catalog";
 import { displayName } from "@/lib/business-name";
 import { findSettings, getSettings } from "@/server/services/settings";
@@ -29,8 +29,10 @@ export async function partFilterOptions() {
   };
 }
 
+// Called from Server Actions only: updateTag expires the entry at once, so the page that renders
+// after a save already shows the change (revalidateTag(tag, "max") would serve the old list first).
 export function refreshCatalogRefs() {
-  revalidateTag(CATALOG_REFS);
+  updateTag(CATALOG_REFS);
 }
 
 const SETTINGS = "settings";
@@ -55,5 +57,5 @@ export const cachedBusinessName = unstable_cache(async () => displayName((await 
 });
 
 export function refreshSettings() {
-  revalidateTag(SETTINGS);
+  updateTag(SETTINGS);
 }

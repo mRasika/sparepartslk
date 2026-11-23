@@ -5,7 +5,7 @@ import { sessionUserFrom } from "@/server/auth";
 import { createLogin } from "@/server/auth-admin";
 import { db } from "@/server/db/client";
 import { session } from "@/server/db/schema";
-import { config, middleware } from "@/middleware";
+import { config, proxy } from "@/proxy";
 import { resetDb } from "../helpers/db";
 import { signedInHeaders } from "../helpers/sessions";
 
@@ -29,18 +29,18 @@ async function expiresAt(userId: string) {
   return row.expiresAt;
 }
 
-describe("middleware", () => {
+describe("proxy", () => {
   beforeEach(resetDb);
 
   it("sends a visitor with no session to /login, dropping the query", async () => {
-    const res = await middleware(new NextRequest("http://localhost/invoices?q=1"));
+    const res = await proxy(new NextRequest("http://localhost/invoices?q=1"));
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe("http://localhost/login");
   });
 
   it("renews a day-old session and passes the new cookie on", async () => {
     const { id, headers, expires } = await staleSession();
-    const res = await middleware(new NextRequest("http://localhost/dashboard", { headers }));
+    const res = await proxy(new NextRequest("http://localhost/dashboard", { headers }));
     expect(res.status).toBe(200);
     expect(res.headers.getSetCookie().some((c) => c.includes("session_token="))).toBe(true);
     expect((await expiresAt(id)).getTime()).toBeGreaterThan(expires.getTime() + DAY);
@@ -72,7 +72,7 @@ describe("middleware", () => {
 describe("sessionUserFrom", () => {
   beforeEach(resetDb);
 
-  it("never renews the session itself (a page can't set the cookie; the middleware does)", async () => {
+  it("never renews the session itself (a page can't set the cookie; the proxy does)", async () => {
     const { id, headers, expires } = await staleSession();
     await expect(sessionUserFrom(headers)).resolves.toMatchObject({ id });
     expect((await expiresAt(id)).getTime()).toBe(expires.getTime());

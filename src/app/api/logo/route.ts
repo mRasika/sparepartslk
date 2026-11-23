@@ -1,7 +1,7 @@
 import { readLogo } from "@/server/services/logo";
 
 /**
- * The company logo. Signed-in users only (the middleware guards it like every page). The `?v=` in
+ * The company logo. Signed-in users only (the proxy guards it like every page). The `?v=` in
  * the address changes on every upload, so the long cache never shows an old logo.
  */
 export const dynamic = "force-dynamic";

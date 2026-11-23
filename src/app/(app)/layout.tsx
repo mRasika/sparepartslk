@@ -15,7 +15,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <title>{businessName}</title>
       <div className="min-h-svh">
         <Sidebar businessName={businessName} fullName={user.fullName} role={user.role} lowStockCount={lowCount} />
-        <main className="px-4 py-6 md:ml-60 md:px-8 md:py-8">{children}</main>
+        <main className="px-4 py-6 md:ml-60 md:px-8 md:py-8">
+          <div className="mx-auto max-w-7xl">{children}</div>
+        </main>
       </div>
     </ThemeProvider>
   );
