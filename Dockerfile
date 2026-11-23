@@ -86,9 +86,12 @@ RUN case "$TARGETARCH" in \
 COPY --from=build --chown=node:node /src/.next/standalone /app
 COPY --from=tools --chown=node:node /tools /tools
 COPY --chmod=755 deploy/docker/bin/ /usr/local/bin/
-COPY --chmod=644 deploy/docker/lib/ /usr/local/lib/sparepartslk/
+# No --chmod here: newer BuildKit applies it to the folder too, and a 644 folder can't be opened.
+COPY deploy/docker/lib/ /usr/local/lib/sparepartslk/
 # A new "backups" volume takes this folder's owner, so the scripts (not root) can write there.
-RUN mkdir /backups && chown node:node /backups
+RUN chmod 755 /usr/local/lib/sparepartslk \
+ && chmod 644 /usr/local/lib/sparepartslk/* \
+ && mkdir /backups && chown node:node /backups
 
 # HOSTNAME: Docker sets it to the container's id, which would make Next listen on the wrong address.
 ENV NODE_ENV=production \
