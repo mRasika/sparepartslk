@@ -12,8 +12,6 @@ name: Docker image
 on:
   push:
     tags: ["v*"]
-    # TEMPORARY: the "Run workflow" button only works once this file is on main. Remove before merging.
-    branches: [feat/docker-stack]
   workflow_dispatch:
 
 permissions:
