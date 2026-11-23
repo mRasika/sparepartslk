@@ -14,7 +14,6 @@ FROM node:24-bookworm-slim AS deps
 WORKDIR /src
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
-COPY patches ./patches
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # ---- 2. Build the app ----
