@@ -199,4 +199,35 @@ test.describe("scan follow-ups", () => {
     await expect(page.getByText("“SCAN-1” not added: you are signed out.", { exact: false })).toBeVisible();
     await expect(page.getByText("No parts added yet")).toBeVisible();
   });
+
+  test("a code two parts share lists just those two, even with a filter that hides one", async ({ page }) => {
+    // SCAN-20 is in "Scan test"; SCAN-21 is not, and its barcode is SCAN-20.
+    await page.goto("/parts?q=SCAN-21");
+    try {
+      await page.getByRole("link", { name: "SCAN-21", exact: true }).waitFor({ timeout: 5_000 });
+    } catch {
+      for (const [sku, name, category, barcode] of [
+        ["SCAN-20", "Scan test part twenty", "Scan test", ""],
+        ["SCAN-21", "Scan test part twenty-one", "", "SCAN-20"],
+      ]) {
+        await page.goto("/parts/new");
+        await page.getByLabel("SKU").fill(sku);
+        await page.getByLabel("Name", { exact: true }).fill(name);
+        if (category) await page.getByLabel("Category").selectOption({ label: category });
+        if (barcode) await page.getByLabel("Barcode").fill(barcode);
+        await page.getByLabel("Retail price (Rs)").fill("100");
+        await page.getByRole("button", { name: "Create part" }).click();
+        await expect(page.getByRole("heading", { name })).toBeVisible();
+      }
+    }
+    await page.goto("/grn/new");
+    await page.getByLabel("Filter by category").selectOption({ label: "Scan test" });
+    await expect(page.getByRole("option", { name: /SCAN-20/ })).toBeVisible();
+    await scan(page, "SCAN-20");
+    await expect(page.getByText("“SCAN-20” is used by 2 parts. Choose one:")).toBeVisible();
+    await expect(page.getByRole("option")).toHaveCount(2);
+    await page.getByRole("option", { name: /SCAN-21/ }).click();
+    await expect(page.getByLabel("Qty for SCAN-21", { exact: true })).toBeFocused();
+    await expect(page.getByLabel("Qty for SCAN-20", { exact: true })).toHaveCount(0);
+  });
 });

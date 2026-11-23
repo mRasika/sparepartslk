@@ -43,7 +43,8 @@ function searchKey(q: string, customerId: string | undefined, categoryId: string
  * the search, and with nothing typed lists everything in it.
  *
  * Enter: a row the user arrowed to is picked as before. Otherwise a unique exact SKU or barcode
- * match is a scan pick, then the highlighted result, else the code is unknown. Matches come from
+ * match is a scan pick; a code two parts share lists just those two to choose from; then the
+ * highlighted result, else the code is unknown. Matches come from
  * the list on screen when it was loaded for exactly this text, or else from an immediate,
  * unfiltered lookup. A USB scanner types the code and Enter in a few ms, so on a lookup the input
  * clears at once, ready for the next scan.
@@ -81,10 +82,15 @@ export function PartPicker({
   const [highlighted, setHighlighted] = useState("");
   /** Why the last scan added nothing, shown under the finder until the text changes. */
   const [problem, setProblem] = useState<{ kind: ScanProblem; code: string } | null>(null);
+  /**
+   * Parts sharing the scanned code (one part's SKU is another's barcode), listed on their own for
+   * the user to choose from, instead of a search list the filters may have cut them from.
+   */
+  const [choices, setChoices] = useState<{ code: string; parts: PickedPart[] } | null>(null);
   /** Applies scan lookups in scan order. */
   const [queue] = useState(createInOrder);
   const filtered = Boolean(categoryId || vehicleModelId);
-  const active = Boolean(query.trim()) || filtered;
+  const active = Boolean(query.trim()) || filtered || Boolean(choices);
 
   useEffect(() => {
     const q = query.trim();
@@ -123,6 +129,7 @@ export function PartPicker({
 
   function clearResults() {
     setQuery("");
+    setChoices(null);
     // A filtered list stays for the next pick; a plain search starts over.
     if (!filtered) {
       setResults([]);
@@ -141,6 +148,14 @@ export function PartPicker({
     playErrorBeep();
   }
 
+  /** Lists just the parts that share the code, the first highlighted, for the user to choose. */
+  function offerChoice(code: string, parts: PickedPart[]) {
+    setChoices({ code, parts });
+    setHighlighted(parts[0].id);
+    setOpen(true);
+    requestAnimationFrame(() => input.current?.select());
+  }
+
   /**
    * Enter with text in the finder. The list on screen counts only when it was loaded for exactly
    * this text and these filters: a scanner types the whole code inside the search delay, so the
@@ -148,6 +163,9 @@ export function PartPicker({
    */
   function enter(code: string) {
     setProblem(null);
+    // Choosing between parts that share a code: the highlighted one.
+    const choice = choices?.parts.find((p) => p.id === highlighted);
+    if (choice) return pick(choice, "list");
     const fresh = resultsKey === searchKey(code, customerId, categoryId, vehicleModelId) ? results : null;
     const chosen = fresh?.find((r) => r.id === highlighted);
     // An earlier scan is still being looked up: this one must not overtake it.
@@ -163,7 +181,7 @@ export function PartPicker({
       // with no wait that could swallow a quantity typed straight after Enter.
       const exact = findExactMatches(fresh, code);
       if (exact.length === 1) return pick(exact[0], "scan");
-      if (exact.length > 1) return; // One part's SKU is another's barcode: the user chooses.
+      if (exact.length > 1) return offerChoice(code, exact); // One part's SKU is another's barcode.
       if (chosen) return pick(chosen, "list");
       return fail("unknown", code);
     }
@@ -203,11 +221,7 @@ export function PartPicker({
     if (exact.length === 1) return onPick(exact[0], "scan");
     if (fallback && exact.length === 0) return onPick(fallback, "list");
     putBack();
-    if (exact.length > 1) {
-      setOpen(true);
-      requestAnimationFrame(() => input.current?.select());
-      return;
-    }
+    if (exact.length > 1) return offerChoice(code, exact);
     fail("unknown", code);
   }
 
@@ -238,6 +252,7 @@ export function PartPicker({
             onChange={(e) => {
               setQuery(e.target.value);
               setProblem(null);
+              setChoices(null);
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
@@ -272,12 +287,16 @@ export function PartPicker({
             (!open || !active) && "hidden",
           )}
         >
-          {loading && results.length === 0 ? (
+          {choices ? (
+            <div className="px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+              “{choices.code}” is used by {choices.parts.length} parts. Choose one:
+            </div>
+          ) : loading && results.length === 0 ? (
             <div className="py-6 text-center text-sm text-muted-foreground">Searching…</div>
           ) : (
             !loading && <CommandEmpty>{empty}</CommandEmpty>
           )}
-          {results.map((p) => (
+          {(choices?.parts ?? results).map((p) => (
             <CommandItem
               key={p.id}
               value={p.id}
