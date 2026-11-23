@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui/command";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { playErrorBeep, unlockAudio } from "@/lib/beep";
-import { findExactMatches, scanLookupUrl } from "@/lib/scan";
+import { createInOrder, findExactMatches, scanLookupUrl } from "@/lib/scan";
 import { cn } from "@/lib/utils";
 import type { PartListRow } from "@/server/services/catalog";
 
@@ -74,6 +74,8 @@ export function PartPicker({
   const [highlighted, setHighlighted] = useState("");
   /** The code of the last scan that matched no part. */
   const [unknownCode, setUnknownCode] = useState<string | null>(null);
+  /** Applies scan lookups in scan order. */
+  const [queue] = useState(createInOrder);
   const filtered = Boolean(categoryId || vehicleModelId);
   const active = Boolean(query.trim()) || filtered;
 
@@ -141,9 +143,15 @@ export function PartPicker({
     setUnknownCode(null);
     const fresh = resultsKey === searchKey(code, customerId, categoryId, vehicleModelId) ? results : null;
     const chosen = fresh?.find((r) => r.id === highlighted);
+    // An earlier scan is still being looked up: this one must not overtake it.
+    const behind = queue.busy;
     // The user arrowed to a row: that row, whatever else matches.
-    if (chosen && chosen !== fresh?.[0]) return pick(chosen, "list");
-    if (fresh && !filtered) {
+    if (chosen && chosen !== fresh?.[0]) {
+      if (!behind) return pick(chosen, "list");
+      clearResults();
+      return void queue.add(Promise.resolve(), () => onPick(chosen, "list"));
+    }
+    if (fresh && !filtered && !behind) {
       // An unfiltered search lists exact matches first, so the loaded list settles it at once,
       // with no wait that could swallow a quantity typed straight after Enter.
       const exact = findExactMatches(fresh, code);
@@ -155,17 +163,26 @@ export function PartPicker({
     void lookUp(code, chosen);
   }
 
-  /** Looks the code up without filters. Each scan's lookup runs on its own, so none is lost. */
-  async function lookUp(code: string, fallback: PickedPart | undefined) {
+  /**
+   * Looks the code up without filters. Lookups run at the same time, so none waits for another,
+   * but their results are applied in scan order, so lines go in in the order they were scanned.
+   */
+  function lookUp(code: string, fallback: PickedPart | undefined) {
     clearResults();
-    let rows: PickedPart[] = [];
+    void queue.add(fetchRows(code), (rows) => settle(code, rows, fallback));
+  }
+
+  async function fetchRows(code: string): Promise<PickedPart[]> {
     try {
       const res = await fetch(scanLookupUrl(code, customerId));
-      if (res.ok) rows = await res.json();
+      return res.ok ? await res.json() : [];
     } catch {
-      // Network failure: treated as no match below.
+      return []; // Network failure: treated as no match.
     }
+  }
 
+  /** What a looked-up scan does: add its part, offer a choice, or say the code is unknown. */
+  function settle(code: string, rows: PickedPart[], fallback: PickedPart | undefined) {
     const exact = findExactMatches(rows, code);
     if (exact.length === 1) return onPick(exact[0], "scan");
     if (fallback && exact.length === 0) return onPick(fallback, "list");

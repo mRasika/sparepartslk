@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { bumpQty, findExactMatches, scanLookupUrl } from "@/lib/scan";
+import { describe, expect, it, vi } from "vitest";
+import { bumpQty, createInOrder, findExactMatches, scanLookupUrl } from "@/lib/scan";
 
 describe("findExactMatches", () => {
   const rows = [
@@ -57,4 +57,53 @@ describe("scanLookupUrl", () => {
 
   it("leaves out customerId when absent", () =>
     expect(new URL(scanLookupUrl("A"), "http://x").searchParams.has("customerId")).toBe(false));
+});
+
+describe("createInOrder", () => {
+  /** A promise resolved by hand, to make lookups finish in any order. */
+  function later<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  it("applies results in the order they were added, whatever order they arrive in", async () => {
+    const queue = createInOrder();
+    const applied: string[] = [];
+    const a = later<string>();
+    const b = later<string>();
+    const doneA = queue.add(a.promise, (v) => applied.push(v));
+    const doneB = queue.add(b.promise, (v) => applied.push(v));
+    b.resolve("B");
+    await Promise.resolve();
+    expect(applied).toEqual([]);
+    a.resolve("A");
+    await Promise.all([doneA, doneB]);
+    expect(applied).toEqual(["A", "B"]);
+  });
+
+  it("is busy only while something waits", async () => {
+    const queue = createInOrder();
+    expect(queue.busy).toBe(false);
+    const a = later<number>();
+    const done = queue.add(a.promise, () => {});
+    expect(queue.busy).toBe(true);
+    a.resolve(1);
+    await done;
+    expect(queue.busy).toBe(false);
+  });
+
+  it("keeps going after a step throws", async () => {
+    const queue = createInOrder();
+    const applied: number[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const first = queue.add(Promise.resolve(1), () => {
+      throw new Error("boom");
+    });
+    const second = queue.add(Promise.resolve(2), (v) => applied.push(v));
+    await Promise.all([first, second]);
+    expect(applied).toEqual([2]);
+    expect(queue.busy).toBe(false);
+    error.mockRestore();
+  });
 });

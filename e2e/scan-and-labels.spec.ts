@@ -153,3 +153,30 @@ test.describe("scan edge cases", () => {
     await expect(page.getByLabel("Qty for SCAN-1", { exact: true })).toHaveCount(0);
   });
 });
+
+// Fixes for the deferred minors from the barcode review.
+test.describe("scan follow-ups", () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page, "admin");
+    await page.goto("/grn/new");
+  });
+
+  /** The SKUs of the GRN's lines, top to bottom. */
+  const lineOrder = (page: Page) =>
+    page.getByLabel(/^Qty for /).evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")!.slice(8)));
+
+  test("quick scans of different parts go in in scan order, even when lookups return out of order", async ({ page }) => {
+    // Hold the first scan's lookup back so the second one returns first.
+    await page.route(
+      (url) => url.pathname === "/api/parts/search" && url.searchParams.get("q") === "SCAN-1",
+      async (route) => {
+        await new Promise((r) => setTimeout(r, 1_000));
+        await route.continue();
+      },
+    );
+    await scan(page, "SCAN-1");
+    await scan(page, "SCAN-10");
+    await expect(page.getByLabel(/^Qty for /)).toHaveCount(2);
+    expect(await lineOrder(page)).toEqual(["SCAN-1", "SCAN-10"]);
+  });
+});
