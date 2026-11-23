@@ -4,7 +4,7 @@ import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui/command";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { playErrorBeep } from "@/lib/beep";
+import { playErrorBeep, unlockAudio } from "@/lib/beep";
 import { findExactMatches, scanLookupUrl } from "@/lib/scan";
 import { cn } from "@/lib/utils";
 import type { PartListRow } from "@/server/services/catalog";
@@ -218,6 +218,8 @@ export function PartPicker({
                 // Ours, not cmdk's: the Command root would otherwise pick the highlighted row too.
                 e.preventDefault();
                 e.stopPropagation();
+                // While the key press lasts, so a beep after the lookup can sound.
+                unlockAudio();
                 enter(query.trim());
               }
             }}
