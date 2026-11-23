@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { bumpQty, findExactMatches, scanLookupUrl } from "@/lib/scan";
+import { describe, expect, it, vi } from "vitest";
+import {
+  bumpQty,
+  createInOrder,
+  findExactMatches,
+  lookupProblem,
+  scanLookupUrl,
+  scanProblemText,
+} from "@/lib/scan";
 
 describe("findExactMatches", () => {
   const rows = [
@@ -57,4 +64,69 @@ describe("scanLookupUrl", () => {
 
   it("leaves out customerId when absent", () =>
     expect(new URL(scanLookupUrl("A"), "http://x").searchParams.has("customerId")).toBe(false));
+});
+
+describe("createInOrder", () => {
+  /** A promise resolved by hand, to make lookups finish in any order. */
+  function later<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  it("applies results in the order they were added, whatever order they arrive in", async () => {
+    const queue = createInOrder();
+    const applied: string[] = [];
+    const a = later<string>();
+    const b = later<string>();
+    const doneA = queue.add(a.promise, (v) => applied.push(v));
+    const doneB = queue.add(b.promise, (v) => applied.push(v));
+    b.resolve("B");
+    await Promise.resolve();
+    expect(applied).toEqual([]);
+    a.resolve("A");
+    await Promise.all([doneA, doneB]);
+    expect(applied).toEqual(["A", "B"]);
+  });
+
+  it("is busy only while something waits", async () => {
+    const queue = createInOrder();
+    expect(queue.busy).toBe(false);
+    const a = later<number>();
+    const done = queue.add(a.promise, () => {});
+    expect(queue.busy).toBe(true);
+    a.resolve(1);
+    await done;
+    expect(queue.busy).toBe(false);
+  });
+
+  it("keeps going after a step throws", async () => {
+    const queue = createInOrder();
+    const applied: number[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const first = queue.add(Promise.resolve(1), () => {
+      throw new Error("boom");
+    });
+    const second = queue.add(Promise.resolve(2), (v) => applied.push(v));
+    await Promise.all([first, second]);
+    expect(applied).toEqual([2]);
+    expect(queue.busy).toBe(false);
+    error.mockRestore();
+  });
+});
+
+describe("scan problems", () => {
+  it("a 401 means signed out; any other failure is a lookup failure", () => {
+    expect(lookupProblem(401)).toBe("signed-out");
+    expect(lookupProblem(404)).toBe("failed");
+    expect(lookupProblem(500)).toBe("failed");
+  });
+
+  it("each problem says what happened and what to do", () => {
+    expect(scanProblemText("unknown", "X1")).toBe("No part with code “X1”");
+    expect(scanProblemText("signed-out", "X1")).toBe(
+      "“X1” not added: you are signed out. Sign in again in another tab, then scan it again.",
+    );
+    expect(scanProblemText("failed", "X1")).toBe("Couldn’t look up “X1”. Check the connection and scan it again.");
+  });
 });

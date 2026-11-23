@@ -4,8 +4,15 @@ import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui/command";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { playErrorBeep } from "@/lib/beep";
-import { findExactMatches, scanLookupUrl } from "@/lib/scan";
+import { playErrorBeep, unlockAudio } from "@/lib/beep";
+import {
+  createInOrder,
+  findExactMatches,
+  lookupProblem,
+  scanLookupUrl,
+  scanProblemText,
+  type ScanProblem,
+} from "@/lib/scan";
 import { cn } from "@/lib/utils";
 import type { PartListRow } from "@/server/services/catalog";
 
@@ -36,7 +43,8 @@ function searchKey(q: string, customerId: string | undefined, categoryId: string
  * the search, and with nothing typed lists everything in it.
  *
  * Enter: a row the user arrowed to is picked as before. Otherwise a unique exact SKU or barcode
- * match is a scan pick, then the highlighted result, else the code is unknown. Matches come from
+ * match is a scan pick; a code two parts share lists just those two to choose from; then the
+ * highlighted result, else the code is unknown. Matches come from
  * the list on screen when it was loaded for exactly this text, or else from an immediate,
  * unfiltered lookup. A USB scanner types the code and Enter in a few ms, so on a lookup the input
  * clears at once, ready for the next scan.
@@ -72,10 +80,17 @@ export function PartPicker({
   const [open, setOpen] = useState(false);
   /** The highlighted result's id (cmdk's value). */
   const [highlighted, setHighlighted] = useState("");
-  /** The code of the last scan that matched no part. */
-  const [unknownCode, setUnknownCode] = useState<string | null>(null);
+  /** Why the last scan added nothing, shown under the finder until the text changes. */
+  const [problem, setProblem] = useState<{ kind: ScanProblem; code: string } | null>(null);
+  /**
+   * Parts sharing the scanned code (one part's SKU is another's barcode), listed on their own for
+   * the user to choose from, instead of a search list the filters may have cut them from.
+   */
+  const [choices, setChoices] = useState<{ code: string; parts: PickedPart[] } | null>(null);
+  /** Applies scan lookups in scan order. */
+  const [queue] = useState(createInOrder);
   const filtered = Boolean(categoryId || vehicleModelId);
-  const active = Boolean(query.trim()) || filtered;
+  const active = Boolean(query.trim()) || filtered || Boolean(choices);
 
   useEffect(() => {
     const q = query.trim();
@@ -114,6 +129,7 @@ export function PartPicker({
 
   function clearResults() {
     setQuery("");
+    setChoices(null);
     // A filtered list stays for the next pick; a plain search starts over.
     if (!filtered) {
       setResults([]);
@@ -126,10 +142,18 @@ export function PartPicker({
     clearResults();
   }
 
-  function unknown(code: string) {
-    setUnknownCode(code);
+  function fail(kind: ScanProblem, code: string) {
+    setProblem({ kind, code });
     requestAnimationFrame(() => input.current?.select());
     playErrorBeep();
+  }
+
+  /** Lists just the parts that share the code, the first highlighted, for the user to choose. */
+  function offerChoice(code: string, parts: PickedPart[]) {
+    setChoices({ code, parts });
+    setHighlighted(parts[0].id);
+    setOpen(true);
+    requestAnimationFrame(() => input.current?.select());
   }
 
   /**
@@ -138,45 +162,67 @@ export function PartPicker({
    * list is usually from before the scan and must never decide what gets added.
    */
   function enter(code: string) {
-    setUnknownCode(null);
+    setProblem(null);
+    // Choosing between parts that share a code: the highlighted one.
+    const choice = choices?.parts.find((p) => p.id === highlighted);
+    if (choice) return pick(choice, "list");
     const fresh = resultsKey === searchKey(code, customerId, categoryId, vehicleModelId) ? results : null;
     const chosen = fresh?.find((r) => r.id === highlighted);
+    // An earlier scan is still being looked up: this one must not overtake it.
+    const behind = queue.busy;
     // The user arrowed to a row: that row, whatever else matches.
-    if (chosen && chosen !== fresh?.[0]) return pick(chosen, "list");
-    if (fresh && !filtered) {
+    if (chosen && chosen !== fresh?.[0]) {
+      if (!behind) return pick(chosen, "list");
+      clearResults();
+      return void queue.add(Promise.resolve(), () => onPick(chosen, "list"));
+    }
+    if (fresh && !filtered && !behind) {
       // An unfiltered search lists exact matches first, so the loaded list settles it at once,
       // with no wait that could swallow a quantity typed straight after Enter.
       const exact = findExactMatches(fresh, code);
       if (exact.length === 1) return pick(exact[0], "scan");
-      if (exact.length > 1) return; // One part's SKU is another's barcode: the user chooses.
+      if (exact.length > 1) return offerChoice(code, exact); // One part's SKU is another's barcode.
       if (chosen) return pick(chosen, "list");
-      return unknown(code);
+      return fail("unknown", code);
     }
     void lookUp(code, chosen);
   }
 
-  /** Looks the code up without filters. Each scan's lookup runs on its own, so none is lost. */
-  async function lookUp(code: string, fallback: PickedPart | undefined) {
+  /**
+   * Looks the code up without filters. Lookups run at the same time, so none waits for another,
+   * but their results are applied in scan order, so lines go in in the order they were scanned.
+   */
+  function lookUp(code: string, fallback: PickedPart | undefined) {
     clearResults();
-    let rows: PickedPart[] = [];
+    void queue.add(fetchRows(code), (rows) => settle(code, rows, fallback));
+  }
+
+  async function fetchRows(code: string): Promise<PickedPart[] | Exclude<ScanProblem, "unknown">> {
     try {
       const res = await fetch(scanLookupUrl(code, customerId));
-      if (res.ok) rows = await res.json();
+      return res.ok ? await res.json() : lookupProblem(res.status);
     } catch {
-      // Network failure: treated as no match below.
+      return "failed"; // Offline or the server didn't answer.
     }
+  }
 
+  /** What a looked-up scan does: add its part, offer a choice, or say why it added nothing. */
+  function settle(code: string, rows: PickedPart[] | ScanProblem, fallback: PickedPart | undefined) {
+    // Put the text back only if nothing new was typed or scanned meanwhile.
+    const putBack = () => {
+      if (input.current && !input.current.value) setQuery(code);
+    };
+    // A failed lookup adds nothing, not even the highlighted row: the code may be another part's.
+    if (typeof rows === "string") {
+      putBack();
+      return fail(rows, code);
+    }
     const exact = findExactMatches(rows, code);
     if (exact.length === 1) return onPick(exact[0], "scan");
     if (fallback && exact.length === 0) return onPick(fallback, "list");
-    // Put the text back only if nothing new was typed or scanned meanwhile.
-    if (input.current && !input.current.value) setQuery(code);
-    if (exact.length > 1) {
-      setOpen(true);
-      requestAnimationFrame(() => input.current?.select());
-      return;
-    }
-    unknown(code);
+    putBack();
+    if (exact.length > 1) return offerChoice(code, exact);
+    fail("unknown", code);
   }
 
   /** After choosing a filter, go back to the input so the list opens and typing narrows it. */
@@ -205,7 +251,8 @@ export function PartPicker({
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
-              setUnknownCode(null);
+              setProblem(null);
+              setChoices(null);
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
@@ -218,6 +265,8 @@ export function PartPicker({
                 // Ours, not cmdk's: the Command root would otherwise pick the highlighted row too.
                 e.preventDefault();
                 e.stopPropagation();
+                // While the key press lasts, so a beep after the lookup can sound.
+                unlockAudio();
                 enter(query.trim());
               }
             }}
@@ -227,9 +276,9 @@ export function PartPicker({
             className="h-10 w-full rounded-lg border border-input bg-card pr-3 pl-8 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </div>
-        {unknownCode && (
+        {problem && (
           <p role="alert" className="mt-1 text-xs text-destructive">
-            No part with code “{unknownCode}”
+            {scanProblemText(problem.kind, problem.code)}
           </p>
         )}
         <CommandList
@@ -238,12 +287,16 @@ export function PartPicker({
             (!open || !active) && "hidden",
           )}
         >
-          {loading && results.length === 0 ? (
+          {choices ? (
+            <div className="px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+              “{choices.code}” is used by {choices.parts.length} parts. Choose one:
+            </div>
+          ) : loading && results.length === 0 ? (
             <div className="py-6 text-center text-sm text-muted-foreground">Searching…</div>
           ) : (
             !loading && <CommandEmpty>{empty}</CommandEmpty>
           )}
-          {results.map((p) => (
+          {(choices?.parts ?? results).map((p) => (
             <CommandItem
               key={p.id}
               value={p.id}

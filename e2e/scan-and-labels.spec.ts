@@ -153,3 +153,108 @@ test.describe("scan edge cases", () => {
     await expect(page.getByLabel("Qty for SCAN-1", { exact: true })).toHaveCount(0);
   });
 });
+
+// Fixes for the deferred minors from the barcode review.
+test.describe("scan follow-ups", () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page, "admin");
+    await page.goto("/grn/new");
+  });
+
+  /** The SKUs of the GRN's lines, top to bottom. */
+  const lineOrder = (page: Page) =>
+    page.getByLabel(/^Qty for /).evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")!.slice(8)));
+
+  test("quick scans of different parts go in in scan order, even when lookups return out of order", async ({ page }) => {
+    // Hold the first scan's lookup back so the second one returns first.
+    await page.route(
+      (url) => url.pathname === "/api/parts/search" && url.searchParams.get("q") === "SCAN-1",
+      async (route) => {
+        await new Promise((r) => setTimeout(r, 1_000));
+        await route.continue();
+      },
+    );
+    await scan(page, "SCAN-1");
+    await scan(page, "SCAN-10");
+    await expect(page.getByLabel(/^Qty for /)).toHaveCount(2);
+    expect(await lineOrder(page)).toEqual(["SCAN-1", "SCAN-10"]);
+  });
+
+  test("a lookup that fails says so instead of 'No part with code'", async ({ page }) => {
+    await page.route(
+      (url) => url.pathname === "/api/parts/search" && url.searchParams.get("q") === "SCAN-1",
+      (route) => route.abort("internetdisconnected"),
+    );
+    await scan(page, "SCAN-1");
+    await expect(page.getByText("Couldn’t look up “SCAN-1”. Check the connection and scan it again.")).toBeVisible();
+    await expect(page.getByText("No parts added yet")).toBeVisible();
+  });
+
+  test("a signed-out lookup says to sign in again", async ({ page }) => {
+    await page.route(
+      (url) => url.pathname === "/api/parts/search" && url.searchParams.get("q") === "SCAN-1",
+      (route) => route.fulfill({ status: 401, body: "Sign in required" }),
+    );
+    await scan(page, "SCAN-1");
+    await expect(page.getByText("“SCAN-1” not added: you are signed out.", { exact: false })).toBeVisible();
+    await expect(page.getByText("No parts added yet")).toBeVisible();
+  });
+
+  test("a code two parts share lists just those two, even with a filter that hides one", async ({ page }) => {
+    // SCAN-20 is in "Scan test"; SCAN-21 is not, and its barcode is SCAN-20.
+    await page.goto("/parts?q=SCAN-21");
+    try {
+      await page.getByRole("link", { name: "SCAN-21", exact: true }).waitFor({ timeout: 5_000 });
+    } catch {
+      for (const [sku, name, category, barcode] of [
+        ["SCAN-20", "Scan test part twenty", "Scan test", ""],
+        ["SCAN-21", "Scan test part twenty-one", "", "SCAN-20"],
+      ]) {
+        await page.goto("/parts/new");
+        await page.getByLabel("SKU").fill(sku);
+        await page.getByLabel("Name", { exact: true }).fill(name);
+        if (category) await page.getByLabel("Category").selectOption({ label: category });
+        if (barcode) await page.getByLabel("Barcode").fill(barcode);
+        await page.getByLabel("Retail price (Rs)").fill("100");
+        await page.getByRole("button", { name: "Create part" }).click();
+        await expect(page.getByRole("heading", { name })).toBeVisible();
+      }
+    }
+    await page.goto("/grn/new");
+    await page.getByLabel("Filter by category").selectOption({ label: "Scan test" });
+    await expect(page.getByRole("option", { name: /SCAN-20/ })).toBeVisible();
+    await scan(page, "SCAN-20");
+    await expect(page.getByText("“SCAN-20” is used by 2 parts. Choose one:")).toBeVisible();
+    await expect(page.getByRole("listbox").getByRole("option")).toHaveCount(2);
+    await page.getByRole("option", { name: /SCAN-21/ }).click();
+    await expect(page.getByLabel("Qty for SCAN-21", { exact: true })).toBeFocused();
+    await expect(page.getByLabel("Qty for SCAN-20", { exact: true })).toHaveCount(0);
+  });
+
+  test("printing more than 50 labels asks first", async ({ page }) => {
+    // Count print calls instead of opening the browser's print dialog.
+    await page.addInitScript(() => {
+      (window as unknown as { printed: number }).printed = 0;
+      window.print = () => void (window as unknown as { printed: number }).printed++;
+    });
+    const printed = () => page.evaluate(() => (window as unknown as { printed: number }).printed);
+    await page.goto(`/grn?q=GRN-${new Date().getFullYear()}-000001`);
+    await page.getByRole("link", { name: `GRN-${new Date().getFullYear()}-000001` }).click();
+    await page.getByRole("link", { name: "Print labels" }).click();
+
+    // 10 labels: prints at once.
+    await page.getByRole("button", { name: "Print" }).click();
+    await expect.poll(printed).toBe(1);
+
+    await page.getByLabel("Labels for BRK-001").fill("60");
+    await page.getByRole("button", { name: "Print" }).click();
+    await expect(page.getByRole("dialog", { name: "Print 60 labels?" })).toBeVisible();
+    await page.getByRole("button", { name: "Check counts" }).click();
+    await expect(page.getByRole("dialog")).toBeHidden();
+    expect(await printed()).toBe(1);
+
+    await page.getByRole("button", { name: "Print" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Print" }).click();
+    await expect.poll(printed).toBe(2);
+  });
+});
