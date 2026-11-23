@@ -23,7 +23,7 @@ export async function loadActiveUser(userId: string): Promise<SessionUser | null
  * The signed-in, active user for these request headers. Every call reads the session row (the
  * cookie cache is skipped), so signing out, Set password and turning a login off take effect on
  * the next request. It never renews the session: a page render can't set the cookie, so the daily
- * renewal is left to the middleware, which passes the new cookie on.
+ * renewal is left to the proxy (src/proxy.ts), which passes the new cookie on.
  */
 export async function sessionUserFrom(headers: Headers): Promise<SessionUser | null> {
   const found = await auth.api.getSession({ headers, query: { disableCookieCache: true, disableRefresh: true } }).catch((e) => {

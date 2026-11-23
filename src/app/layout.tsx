@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans } from "next/font/google";
-import { ReactNudge } from "@/components/react-nudge";
 import "./globals.css";
 
 const plex = IBM_Plex_Sans({
@@ -24,7 +23,6 @@ export default function RootLayout({
     <html lang="en" className={plex.variable} suppressHydrationWarning>
       <body className="antialiased">
         {children}
-        <ReactNudge />
       </body>
     </html>
   );

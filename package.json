@@ -28,11 +28,11 @@
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.45.4",
     "lucide-react": "^1.61.0",
-    "next": "15.5.28",
+    "next": "16.4.5",
     "next-themes": "^0.4.6",
     "postgres": "^3.4.9",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "recharts": "3.8.0",
     "shadcn": "^4.22.1",
     "sonner": "^2.0.8",
@@ -44,23 +44,18 @@
     "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.19.2",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "^5.0.5",
     "cross-env": "^10.1.0",
     "dotenv": "^18.0.8",
     "drizzle-kit": "^0.31.11",
     "eslint": "^9",
-    "eslint-config-next": "15.5.28",
+    "eslint-config-next": "16.4.5",
     "supabase": "^2.121.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.5"
-  },
-  "pnpm": {
-    "patchedDependencies": {
-      "next@15.5.28": "patches/next@15.5.28.patch"
-    }
   }
 }

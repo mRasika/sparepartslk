@@ -154,6 +154,7 @@ export function LineItemsGrid<L extends GridLine>({
                 </TableCell>
               </TableRow>
             )}
+            {/* eslint-disable-next-line react-hooks/refs -- `update` reads `latest` only when a cell's own input changes (c.render hands it to an onChange); the rule can't see that c.render doesn't call it while drawing */}
             {lines.map((line) => {
               const error = rowError?.(line);
               return (
